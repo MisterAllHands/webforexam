@@ -81,7 +81,7 @@ If you want to use the GitHub CLI:
 git init -b main
 git add .
 git commit -m "Initial Galina exam site"
-gh repo create GalinaExamWebsite --public --source=. --remote=origin --push
+gh repo create webforexam --public --source=. --remote=origin --push
 ```
 
 After the repository exists, GitHub Actions will deploy the site on every push to `main`.
@@ -97,10 +97,10 @@ npm run build
 Simulate a project Pages base path:
 
 ```bash
-BASE_PATH="/GalinaExamWebsite/" npm run build
+BASE_PATH="/webforexam/" npm run build
 ```
 
-That second command is useful if the repository name is `GalinaExamWebsite`.
+That second command is useful because the current repository name is `webforexam`.
 
 ## Suggested Final Content Before Galina Uses It
 
