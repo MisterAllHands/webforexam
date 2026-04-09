@@ -1,7 +1,36 @@
 .app-shell {
+  position: relative;
   width: min(1180px, calc(100% - 32px));
   margin: 0 auto;
   padding: 32px 0 72px;
+}
+
+.app-shell::before,
+.app-shell::after {
+  content: '';
+  position: fixed;
+  border-radius: 50%;
+  filter: blur(18px);
+  pointer-events: none;
+  z-index: -1;
+  animation: floatDrift 14s ease-in-out infinite;
+}
+
+.app-shell::before {
+  top: 12%;
+  left: -60px;
+  width: 180px;
+  height: 180px;
+  background: rgba(92, 31, 34, 0.08);
+}
+
+.app-shell::after {
+  right: -40px;
+  bottom: 15%;
+  width: 220px;
+  height: 220px;
+  background: rgba(197, 154, 74, 0.12);
+  animation-delay: -7s;
 }
 
 .surface {
@@ -10,6 +39,10 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow);
+  transition:
+    transform 220ms ease,
+    box-shadow 220ms ease,
+    border-color 220ms ease;
 }
 
 .hero-panel {
@@ -45,6 +78,22 @@
   height: 220px;
   border-radius: 50%;
   background: radial-gradient(circle, rgba(92, 31, 34, 0.14), transparent 70%);
+}
+
+.hero-mini-strip {
+  display: grid;
+  gap: 8px;
+  margin-top: 24px;
+}
+
+.hero-mini-strip span {
+  display: inline-flex;
+  width: fit-content;
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: rgba(255, 250, 244, 0.7);
+  color: var(--accent-3);
+  border: 1px solid rgba(92, 31, 34, 0.12);
 }
 
 .eyebrow,
@@ -116,6 +165,12 @@
 .summary-card {
   padding: 26px 24px;
   border-right: 1px solid var(--border);
+  animation: riseIn 560ms both;
+  animation-delay: var(--card-delay, 0ms);
+  transition:
+    transform 220ms ease,
+    background 220ms ease,
+    border-color 220ms ease;
 }
 
 .summary-card:last-child {
@@ -140,6 +195,11 @@
   background: rgba(92, 31, 34, 0.08);
   color: var(--accent);
   font-weight: 700;
+}
+
+.summary-card:hover {
+  transform: translateY(-6px);
+  background: rgba(255, 251, 246, 0.92);
 }
 
 .nav-panel {
@@ -168,6 +228,24 @@
   color: var(--text-soft);
 }
 
+.progress-track {
+  position: relative;
+  width: min(240px, 100%);
+  height: 10px;
+  margin-top: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(92, 31, 34, 0.1);
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  box-shadow: 0 0 20px rgba(197, 154, 74, 0.35);
+  transition: width 420ms ease;
+}
+
 .section-nav {
   display: flex;
   flex-wrap: wrap;
@@ -193,6 +271,8 @@
   background: rgba(255, 250, 244, 0.8);
   color: var(--text-soft);
   padding: 10px 16px;
+  position: relative;
+  overflow: hidden;
 }
 
 .nav-chip.active {
@@ -206,6 +286,15 @@
   box-shadow: inset 0 0 0 1px rgba(47, 107, 79, 0.1);
 }
 
+.nav-chip.complete::after {
+  content: '';
+  position: absolute;
+  inset: 6px auto 6px 8px;
+  width: 6px;
+  border-radius: 999px;
+  background: var(--success);
+}
+
 .nav-chip:hover,
 .primary-button:hover,
 .ghost-button:hover,
@@ -216,6 +305,7 @@
 .section-panel {
   margin-top: 20px;
   padding: 28px;
+  animation: riseIn 420ms ease both;
 }
 
 .section-heading {
@@ -282,6 +372,14 @@
   gap: 18px;
 }
 
+.signature-grid,
+.section-prelude,
+.results-editorial {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
 .content-card,
 .exam-card,
 .result-card,
@@ -333,6 +431,83 @@
   font-weight: 700;
 }
 
+.signature-grid {
+  margin-top: 22px;
+}
+
+.signature-card,
+.prelude-card {
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  background: rgba(255, 252, 247, 0.9);
+  animation: riseIn 560ms both;
+  animation-delay: var(--card-delay, 0ms);
+}
+
+.signature-card span {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.13em;
+  color: var(--accent);
+}
+
+.signature-card p,
+.prelude-card p {
+  color: var(--text-soft);
+}
+
+.section-prelude {
+  margin: 18px 0 20px;
+}
+
+.prelude-card.main {
+  background:
+    linear-gradient(140deg, rgba(92, 31, 34, 0.94), rgba(110, 49, 53, 0.92)),
+    rgba(92, 31, 34, 0.94);
+  color: #fff7ef;
+}
+
+.prelude-card.main .mini-label,
+.prelude-card.main p,
+.prelude-card.main h3 {
+  color: inherit;
+}
+
+.prelude-card.main h3 {
+  margin-top: 12px;
+  font-size: 1.7rem;
+  line-height: 1.05;
+}
+
+.prelude-card .plain-list {
+  margin-top: 10px;
+}
+
+.support-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 14px 0 0;
+}
+
+.support-strip.compact {
+  margin-top: 12px;
+}
+
+.support-strip span {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(92, 31, 34, 0.14);
+  background: rgba(255, 247, 239, 0.94);
+  color: var(--accent);
+  font-size: 0.9rem;
+}
+
 .action-row {
   display: flex;
   flex-wrap: wrap;
@@ -359,11 +534,14 @@
   padding: 12px 18px;
   border: 1px solid transparent;
   text-decoration: none;
+  position: relative;
+  overflow: hidden;
 }
 
 .primary-button {
   background: var(--accent);
   color: #fff7ef;
+  box-shadow: 0 14px 28px rgba(92, 31, 34, 0.18);
 }
 
 .ghost-button,
@@ -373,11 +551,34 @@
   border-color: var(--border-strong);
 }
 
+.primary-button::after,
+.ghost-button::after,
+.file-trigger::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, transparent 0%, rgba(255, 255, 255, 0.18) 45%, transparent 80%);
+  transform: translateX(-120%);
+  transition: transform 420ms ease;
+}
+
+.primary-button:hover::after,
+.ghost-button:hover::after,
+.file-trigger:hover::after {
+  transform: translateX(120%);
+}
+
+.primary-button.is-active,
+.primary-button.is-recording {
+  animation: softPulse 1.6s ease-in-out infinite;
+}
+
 .exam-card,
 .teacher-column,
 .teacher-summary {
   margin-top: 18px;
   padding: 22px;
+  animation: riseIn 420ms ease both;
 }
 
 .card-header {
@@ -416,6 +617,24 @@
   border-radius: 18px;
   background: rgba(255, 253, 249, 0.9);
   border: 1px solid rgba(79, 55, 40, 0.1);
+  animation: riseIn 420ms both;
+  animation-delay: var(--card-delay, 0ms);
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    background 180ms ease;
+}
+
+.question-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(92, 31, 34, 0.18);
+  box-shadow: 0 14px 26px rgba(70, 45, 34, 0.06);
+}
+
+.question-card.answered {
+  background: rgba(255, 251, 246, 0.98);
+  border-color: rgba(197, 154, 74, 0.28);
 }
 
 .question-meta {
@@ -466,6 +685,10 @@
   border-radius: 16px;
   background: rgba(255, 253, 249, 0.95);
   color: var(--text-main);
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
 }
 
 .short-answer {
@@ -478,6 +701,15 @@
   margin-top: 14px;
   padding: 14px 16px;
   resize: vertical;
+}
+
+.short-answer:focus,
+.essay-field:focus,
+.teacher-textarea:focus,
+.voice-bar select:focus {
+  outline: none;
+  border-color: rgba(92, 31, 34, 0.35);
+  box-shadow: 0 0 0 4px rgba(92, 31, 34, 0.08);
 }
 
 .voice-bar {
@@ -524,6 +756,7 @@
 
 .result-card {
   padding: 20px;
+  animation: riseIn 460ms both;
 }
 
 .result-card p {
@@ -540,6 +773,10 @@
   border-radius: var(--radius-lg);
   border: 1px solid rgba(197, 154, 74, 0.3);
   background: linear-gradient(120deg, rgba(197, 154, 74, 0.18), rgba(92, 31, 34, 0.06));
+}
+
+.results-editorial {
+  margin: 20px 0 0;
 }
 
 .teacher-textarea {
@@ -666,10 +903,49 @@
   display: none;
 }
 
+@keyframes riseIn {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes floatDrift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+
+  50% {
+    transform: translate3d(0, 18px, 0);
+  }
+}
+
+@keyframes softPulse {
+  0%,
+  100% {
+    box-shadow: 0 14px 28px rgba(92, 31, 34, 0.18);
+  }
+
+  50% {
+    box-shadow:
+      0 14px 28px rgba(92, 31, 34, 0.18),
+      0 0 0 8px rgba(92, 31, 34, 0.08);
+  }
+}
+
 @media (max-width: 1080px) {
   .hero-panel,
   .summary-grid,
   .two-column,
+  .signature-grid,
+  .section-prelude,
+  .results-editorial,
   .results-grid,
   .teacher-panel,
   .certificate-metrics,
@@ -714,6 +990,10 @@
   .option-list.compact,
   .rubric-row {
     grid-template-columns: 1fr;
+  }
+
+  .progress-track {
+    width: 100%;
   }
 }
 

@@ -22,12 +22,29 @@ export const examData = {
       "This exam is designed only for Galina. It checks how well she can understand, use, and produce the grammar and communication patterns covered up to Unit 45.",
     introRu:
       'Этот экзамен сделан только для Галины. Он проверяет, насколько уверенно она понимает и использует материал до 45-го юнита.',
+    mission:
+      'This should feel calm, serious, and elegant. It is not a school worksheet. It is a private readiness session designed around Galina’s actual progress.',
+    missionRu:
+      'Экзамен должен ощущаться спокойно, серьёзно и красиво. Это не обычный школьный тест, а персональная проверка готовности.',
     rules: [
       'Complete the exam in a quiet room and use headphones for listening.',
       'Do not open the grammar book during the test.',
       'Each listening text can be played only two times.',
       'Finish the writing tasks before you record speaking.',
       'At the end, download the submission file and send it to Ramazan the same day.',
+    ],
+    preflightChecklist: [
+      'Headphones ready',
+      'Quiet room',
+      'Microphone permission allowed',
+      'No grammar book or notes open',
+      'Time available for one full sitting',
+    ],
+    signatureMoments: [
+      'Reading checks detail and grammar meaning together.',
+      'Listening is timed and disciplined, with only two plays.',
+      'Writing requires controlled grammar, not only ideas.',
+      'Speaking should sound natural, calm, and clear.',
     ],
     sections: [
       {
@@ -72,6 +89,16 @@ export const examData = {
     sectionTitle: 'Reading | Чтение',
     instruction:
       'Read the texts carefully. Answer in English. For short answers, use only the necessary words.',
+    coachNote:
+      'This section is not only about understanding the story. It is also checking whether Galina notices time reference, tense meaning, passive structures, and question meaning inside context.',
+    strategy:
+      'Read once for the general idea, then return to each question and underline the exact words or grammar clue that supports the answer.',
+    checklist: [
+      'Notice time words such as last week, since, already, yesterday',
+      'Watch whether the verb is active or passive',
+      'Do not add extra words in short answers',
+    ],
+    targetSkills: ['Reading for detail', 'Tense meaning', 'Passive recognition', 'Question logic'],
     passages: [
       {
         id: 'progress-journal',
@@ -208,11 +235,26 @@ export const examData = {
       'Use headphones if possible. Each recording can be played two times. Answer while you listen.',
     ttsNote:
       'This final draft uses browser speech synthesis. If you want a more polished voice later, replace the scripts with MP3 files in this content file.',
+    coachNote:
+      'Listening should feel disciplined. Galina needs to catch exact details, tense reference, and passive forms without reading a transcript.',
+    strategy:
+      'Before pressing play, scan the questions quickly and decide what kind of detail you are listening for: date, action, grammar contrast, or instruction.',
+    checklist: [
+      'Read the questions before playback',
+      'Keep track of dates, days, and numbers',
+      'Listen for grammar contrasts, not only keywords',
+    ],
+    targetSkills: ['Detail listening', 'Instruction tracking', 'Grammar hearing', 'Timed focus'],
     sections: [
       {
         id: 'listening-review',
         title: 'Audio 1: Ramazan reviews the last week',
         maxPlays: 2,
+        listenFor: [
+          'day and sequence',
+          'difference between direct and indirect questions',
+          'past simple versus present perfect',
+        ],
         ttsText:
           "Hello, Galina. Before the exam, let's quickly review what we did last week. We finished Unit 45 on Tuesday, and on Wednesday we checked question forms again. You answered most direct questions well, but you were slower with indirect questions. After that, we compared the past simple with the present perfect. I reminded you that we say, 'I went there last year,' but 'I have visited many places this year.' On Friday, we worked on the passive voice. Several sentences were corrected, and one short paragraph was rewritten. Tonight, please revise your notebook for twenty minutes and then rest.",
         questions: [
@@ -274,6 +316,11 @@ export const examData = {
         id: 'listening-project',
         title: 'Audio 2: Class project announcement',
         maxPlays: 2,
+        listenFor: [
+          'who did the action',
+          'what has already been completed',
+          'what will happen next',
+        ],
         ttsText:
           "Next month, our class project will be shown at the centre. The title was chosen by the students last Friday, and the poster has already been printed. Two short interviews were recorded yesterday, but the third one has not been finished yet. The final version will be checked on Tuesday morning. During the event, visitors will answer five simple questions after they listen to the recordings. If everything goes well, the project will be shared on the school's website the next day.",
         questions: [
@@ -334,6 +381,16 @@ export const examData = {
     sectionTitle: 'Writing | Письмо',
     instruction:
       'Write clearly and naturally. Ramazan will review these tasks manually after the submission file is received.',
+    coachNote:
+      'Writing is where controlled grammar has to become personal language. The answer should sound like Galina, but the structure should stay clean and deliberate.',
+    strategy:
+      'Plan briefly before writing. Decide where you will place the grammar targets so they sound natural rather than forced.',
+    checklist: [
+      'Use full sentences with clear punctuation',
+      'Control the target grammar deliberately',
+      'Check the word range before moving on',
+    ],
+    targetSkills: ['Practical writing', 'Paragraph control', 'Grammar integration', 'Clarity'],
     tasks: [
       {
         id: 'writing-1',
@@ -343,6 +400,12 @@ export const examData = {
         maxWords: 120,
         prompt:
           'Write an email to Ramazan after the exam. Say which section felt easiest, explain one grammar area that was difficult, and ask one clear question about the next stage of your English study.',
+        supportPoints: [
+          'Open politely',
+          'Mention one real strength',
+          'Name one grammar difficulty clearly',
+          'Finish with one clear question',
+        ],
       },
       {
         id: 'writing-2',
@@ -352,6 +415,12 @@ export const examData = {
         maxWords: 170,
         prompt:
           'Write about this statement: "A student improves faster when revision is regular and active." Give your opinion and examples from your own study. Include at least one past simple sentence, one present perfect sentence, one passive sentence, and one indirect question.',
+        supportPoints: [
+          'State your opinion early',
+          'Use one personal example from real study',
+          'Place the four required grammar targets naturally',
+          'Finish with a short conclusion',
+        ],
       },
     ],
     rubric: [
@@ -383,6 +452,16 @@ export const examData = {
       'Record one answer for each part. Speak naturally and clearly. Do not try to memorise a full script.',
     browserNote:
       'Chrome and Safari usually handle microphone recording best. Download your submission before you close the browser tab.',
+    coachNote:
+      'Speaking should sound alive, not memorised. The goal is calm control, not perfection. Short pauses are acceptable; frozen silence is what we want to avoid.',
+    strategy:
+      'Think in ideas, not in full memorised sentences. Keep the answer moving and support each point with one small example.',
+    checklist: [
+      'Speak in complete ideas',
+      'Give at least one example in each recording',
+      'Stay calm and keep going if you correct yourself',
+    ],
+    targetSkills: ['Fluency', 'Natural grammar use', 'Confidence under pressure', 'Clear organisation'],
     parts: [
       {
         id: 'speaking-1',
@@ -390,6 +469,11 @@ export const examData = {
         duration: '1-2 min',
         prompt:
           'Introduce yourself and describe your English study routine now. Then explain what has changed since you started working regularly with Ramazan.',
+        followUps: [
+          'When do you usually study?',
+          'What has improved most recently?',
+          'Which part is still difficult?',
+        ],
       },
       {
         id: 'speaking-2',
@@ -397,6 +481,11 @@ export const examData = {
         duration: '2 min',
         prompt:
           'Describe a lesson, exercise, or explanation that helped you understand English grammar better. Say when it happened, what was practised, and why it was useful for you.',
+        followUps: [
+          'Name the grammar area',
+          'Say what changed after that lesson',
+          'Explain why it mattered for your confidence',
+        ],
       },
       {
         id: 'speaking-3',
@@ -404,6 +493,11 @@ export const examData = {
         duration: '2-3 min',
         prompt:
           'Answer these questions in one recording: Why do students often repeat the same grammar mistake? Which is harder to control, tenses or question forms? How should a teacher check speaking progress before the next level?',
+        followUps: [
+          'Give one reason for repeated mistakes',
+          'Compare two problem areas clearly',
+          'Suggest one practical teacher strategy',
+        ],
       },
     ],
     rubric: [

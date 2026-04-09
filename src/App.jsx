@@ -4,6 +4,12 @@ import { examData } from './examData'
 
 const STORAGE_KEY = 'galina-exam-template-v1'
 const EXAM_SECTIONS = ['overview', 'reading', 'listening', 'writing', 'speaking', 'results']
+const SKILL_SECTION_MAP = {
+  reading: examData.reading,
+  listening: examData.listening,
+  writing: examData.writing,
+  speaking: examData.speaking,
+}
 
 function createInitialState() {
   const answers = {}
@@ -321,6 +327,9 @@ function App() {
   const completedSkills = Object.values(completion).filter(Boolean).length
   const progressPercent = Math.round((completedSkills / 4) * 100)
   const readinessLabel = getReadinessLabel(totalScore, totalPercent)
+  const allSectionsFinished = Object.values(completion).every(Boolean)
+  const topRevisionPriority = revisionPriorities[0]?.tag || 'No urgent priority detected'
+  const topStrength = strongestAreas[0]?.tag || 'Balanced objective profile'
 
   useEffect(() => {
     window.localStorage.setItem(
@@ -636,16 +645,20 @@ function App() {
   }
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell section-${currentSection}`}>
       <header className="hero-panel">
         <div className="hero-copy">
-          <p className="eyebrow">Private exam template for one student</p>
+          <p className="eyebrow">Private English session designed only for Galina</p>
           <h1>{examData.meta.examTitle}</h1>
           <p className="hero-text">{examData.meta.subtitle}</p>
           <p className="hero-support">
             {examData.overview.intro}
             <span>{examData.overview.introRu}</span>
           </p>
+          <div className="hero-mini-strip">
+            <span>{examData.overview.mission}</span>
+            <span>{examData.overview.missionRu}</span>
+          </div>
         </div>
 
         <div className="hero-card">
@@ -669,8 +682,8 @@ function App() {
       </header>
 
       <section className="surface summary-grid">
-        {examData.overview.sections.map((section) => (
-          <article key={section.id} className="summary-card">
+        {examData.overview.sections.map((section, index) => (
+          <article key={section.id} className="summary-card" style={{ '--card-delay': `${index * 70}ms` }}>
             <p className="mini-label">
               {section.title} / {section.titleRu}
             </p>
@@ -688,6 +701,9 @@ function App() {
           <span>
             {completedSkills} of 4 assessed skills completed
           </span>
+          <div className="progress-track" aria-hidden="true">
+            <div className="progress-fill" style={{ width: `${progressPercent}%` }} />
+          </div>
         </div>
         <nav className="section-nav" aria-label="Exam sections">
           {EXAM_SECTIONS.map((sectionId) => {
@@ -715,7 +731,7 @@ function App() {
           <div className="section-heading">
             <div>
               <p className="mini-label">Session brief</p>
-              <h2>How this template works</h2>
+              <h2>Before Galina begins</h2>
             </div>
             <div className="score-pill">
               <span>Estimated time</span>
@@ -734,12 +750,12 @@ function App() {
             </div>
 
             <div className="content-card">
-              <h3>Teacher setup note</h3>
-              <p>
-                This exam draft is already aligned to Units 1-45 and Galina&apos;s target weak areas. Later, you can
-                replace texts, prompts, scoring thresholds, and audio scripts inside
-                <code>src/examData.js</code>.
-              </p>
+              <h3>Pre-flight check</h3>
+              <ul className="plain-list">
+                {examData.overview.preflightChecklist.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
             </div>
           </div>
 
@@ -749,21 +765,27 @@ function App() {
             ))}
           </div>
 
+          <div className="signature-grid">
+            {examData.overview.signatureMoments.map((item, index) => (
+              <article key={item} className="signature-card" style={{ '--card-delay': `${index * 80}ms` }}>
+                <span>Exam tone</span>
+                <p>{item}</p>
+              </article>
+            ))}
+          </div>
+
           <div className="action-row">
             <button className="primary-button" type="button" onClick={startExam}>
               {examState.startedAt ? 'Continue exam' : 'Start exam'}
             </button>
-            <button className="ghost-button" type="button" onClick={() => setTeacherMode((current) => !current)}>
-              {teacherMode ? 'Hide teacher mode' : 'Teacher review mode'}
-            </button>
             <button className="ghost-button" type="button" onClick={resetExam}>
-              Reset template
+              Reset session
             </button>
           </div>
 
           <div className="meta-line">
             <span>Started: {formatTimestamp(examState.startedAt)}</span>
-            <span>Saved locally in this browser</span>
+            <span>Progress saves automatically in this browser</span>
           </div>
         </section>
       )}
@@ -782,6 +804,7 @@ function App() {
               </strong>
             </div>
           </div>
+          <SectionPrelude config={SKILL_SECTION_MAP.reading} />
           <p className="instruction-text">{examData.reading.instruction}</p>
 
           {examData.reading.passages.map((passage) => (
@@ -833,6 +856,7 @@ function App() {
               </strong>
             </div>
           </div>
+          <SectionPrelude config={SKILL_SECTION_MAP.listening} />
 
           <p className="instruction-text">{examData.listening.instruction}</p>
           <p className="support-note">{examData.listening.ttsNote}</p>
@@ -871,9 +895,15 @@ function App() {
                 </span>
               </div>
 
+              <div className="support-strip">
+                {section.listenFor.map((item) => (
+                  <span key={item}>{item}</span>
+                ))}
+              </div>
+
               <div className="listening-controls">
                 <button
-                  className="primary-button"
+                  className={`primary-button ${activeListeningId === section.id ? 'is-active' : ''}`}
                   type="button"
                   disabled={(playCounts[section.id] || 0) >= section.maxPlays}
                   onClick={() => playListeningSection(section)}
@@ -916,6 +946,7 @@ function App() {
               <strong>{writingTeacherScore}/20</strong>
             </div>
           </div>
+          <SectionPrelude config={SKILL_SECTION_MAP.writing} />
 
           <p className="instruction-text">{examData.writing.instruction}</p>
 
@@ -935,6 +966,11 @@ function App() {
                 </div>
 
                 <p className="task-prompt">{task.prompt}</p>
+                <div className="support-strip">
+                  {task.supportPoints.map((item) => (
+                    <span key={item}>{item}</span>
+                  ))}
+                </div>
                 <textarea
                   className="essay-field"
                   value={value}
@@ -966,6 +1002,7 @@ function App() {
               <strong>{speakingTeacherScore}/20</strong>
             </div>
           </div>
+          <SectionPrelude config={SKILL_SECTION_MAP.speaking} />
 
           <p className="instruction-text">{examData.speaking.instruction}</p>
           <p className="support-note">{examData.speaking.browserNote}</p>
@@ -982,10 +1019,15 @@ function App() {
                 </div>
 
                 <p className="task-prompt">{part.prompt}</p>
+                <div className="support-strip">
+                  {part.followUps.map((item) => (
+                    <span key={item}>{item}</span>
+                  ))}
+                </div>
 
                 <div className="recording-bar">
                   {activeRecordingId === part.id ? (
-                    <button className="primary-button" type="button" onClick={stopRecording}>
+                    <button className="primary-button is-recording" type="button" onClick={stopRecording}>
                       Stop recording
                     </button>
                   ) : (
@@ -1026,12 +1068,30 @@ function App() {
           <div className="section-heading">
             <div>
               <p className="mini-label">Results</p>
-              <h2>Score summary and certificate</h2>
+              <h2>Assessment summary and certificate</h2>
             </div>
             <div className="score-pill large">
               <span>Overall readiness</span>
               <strong>{readinessLabel}</strong>
             </div>
+          </div>
+
+          <div className="results-editorial">
+            <article className="content-card">
+              <h3>Galina&apos;s picture</h3>
+              <p>
+                {allSectionsFinished
+                  ? `All four skills are complete. The current strongest objective area is ${topStrength.toLowerCase()}, while the next revision priority is ${topRevisionPriority.toLowerCase()}.`
+                  : 'The exam is still in progress. Complete all four skills to lock the final picture and certificate.'}
+              </p>
+            </article>
+            <article className="content-card">
+              <h3>What this score means</h3>
+              <p>
+                This is a private readiness score, not an official IELTS result. It is designed to show how securely
+                Galina can use the Unit 1-45 grammar and communication patterns under mild exam pressure.
+              </p>
+            </article>
           </div>
 
           <div className="results-grid">
@@ -1108,9 +1168,9 @@ function App() {
             </div>
 
             <div className="teacher-column">
-              <h3>Strongest objective areas</h3>
-              <div className="diagnostic-list">
-                {strongestAreas.map((item) => (
+            <h3>Strongest objective areas</h3>
+            <div className="diagnostic-list">
+              {strongestAreas.map((item) => (
                   <article key={item.tag} className="diagnostic-card">
                     <div>
                       <span>{item.tag}</span>
@@ -1127,17 +1187,17 @@ function App() {
 
           <div className="action-row">
             <button className="primary-button" type="button" onClick={exportSubmission}>
-              Download submission JSON
+              Download submission file
             </button>
             <label className="ghost-button file-trigger" htmlFor={importInputId}>
-              Import submission
+              Import reviewer file
             </label>
             <input id={importInputId} className="hidden-input" type="file" accept="application/json" onChange={importSubmission} />
             <button className="ghost-button" type="button" onClick={printCertificate}>
               Print certificate
             </button>
             <button className="ghost-button" type="button" onClick={() => setTeacherMode((current) => !current)}>
-              {teacherMode ? 'Hide teacher panel' : 'Show teacher panel'}
+              {teacherMode ? 'Hide reviewer panel' : 'Show reviewer panel'}
             </button>
           </div>
 
@@ -1235,7 +1295,7 @@ function App() {
 
 function QuestionCard({ index, question, value, onChange }) {
   return (
-    <div className="question-card">
+    <div className={`question-card ${isFilled(value) ? 'answered' : ''}`} style={{ '--card-delay': `${(index - 1) * 55}ms` }}>
       <div className="question-meta">
         <span>
           Q{index} · {question.points} pts
@@ -1284,6 +1344,36 @@ function QuestionCard({ index, question, value, onChange }) {
           value={value}
         />
       )}
+    </div>
+  )
+}
+
+function SectionPrelude({ config }) {
+  return (
+    <div className="section-prelude">
+      <article className="prelude-card main">
+        <span className="mini-label">Coach note</span>
+        <h3>{config.coachNote}</h3>
+        <p>{config.strategy}</p>
+      </article>
+
+      <article className="prelude-card">
+        <span className="mini-label">Focus</span>
+        <div className="support-strip compact">
+          {config.targetSkills.map((item) => (
+            <span key={item}>{item}</span>
+          ))}
+        </div>
+      </article>
+
+      <article className="prelude-card">
+        <span className="mini-label">Checklist</span>
+        <ul className="plain-list">
+          {config.checklist.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      </article>
     </div>
   )
 }
