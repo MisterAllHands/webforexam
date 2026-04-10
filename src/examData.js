@@ -40,6 +40,18 @@ export const examData = {
       'No grammar book or notes open',
       'Time available for one full sitting',
     ],
+    designedFor: [
+      'Galina usually improves when she slows down and checks time reference carefully.',
+      'Past simple and present perfect still need clean separation under pressure.',
+      'Passive voice is understood better than it is produced.',
+      'Question forms are stronger now, but speed can still reduce accuracy.',
+    ],
+    successPicture: [
+      'Confident reading without overthinking every sentence.',
+      'Disciplined listening with calm note capture.',
+      'Natural grammar control inside personal writing.',
+      'Clear speaking with fewer frozen pauses.',
+    ],
     signatureMoments: [
       'Reading checks detail and grammar meaning together.',
       'Listening is timed and disciplined, with only three plays.',
@@ -72,7 +84,7 @@ export const examData = {
         duration: '25 min',
         points: 20,
         description:
-          'Write one practical message and one short opinion response using the grammar from the studied units.',
+          'Write one practical message and one personal reflection using the grammar from the studied units.',
       },
       {
         id: 'speaking',
@@ -397,27 +409,27 @@ export const examData = {
         minWords: 90,
         maxWords: 120,
         prompt:
-          'Write an email to Ramazan after the exam. Say which section felt easiest, explain one grammar area that was difficult, and ask one clear question about the next stage of your English study.',
+          'Write an email to Ramazan after the exam. Tell him which section felt calmest, explain one grammar area that still made you hesitate, and ask what kind of practice should come before the next level.',
         supportPoints: [
-          'Open politely',
-          'Mention one real strength',
-          'Name one grammar difficulty clearly',
-          'Finish with one clear question',
+          'Sound natural and polite, not too formal',
+          'Mention one real strength from today',
+          'Name one grammar difficulty honestly',
+          'Finish with one clear question about the next stage',
         ],
       },
       {
         id: 'writing-2',
-        title: 'Task 2: Short opinion response',
-        titleRu: 'Короткий ответ-мнение',
+        title: 'Task 2: Personal reflection',
+        titleRu: 'Личная рефлексия',
         minWords: 130,
         maxWords: 170,
         prompt:
-          'Write about this statement: "A student improves faster when revision is regular and active." Give your opinion and examples from your own study. Include at least one past simple sentence, one present perfect sentence, one passive sentence, and one indirect question.',
+          'Write a short reflection for your future self about how your English has changed from the beginning of this course to Unit 45. Explain what has helped most, which mistake still returns, and how you want to work before the next level. Include at least one past simple sentence, one present perfect sentence, one passive sentence, and one indirect question.',
         supportPoints: [
-          'State your opinion early',
-          'Use one personal example from real study',
-          'Place the four required grammar targets naturally',
-          'Finish with a short conclusion',
+          'Make it personal, not abstract',
+          'Use one true example from your own study routine',
+          'Place the four grammar targets naturally',
+          'End with a realistic plan for the next stage',
         ],
       },
     ],
@@ -466,11 +478,11 @@ export const examData = {
         title: 'Part 1: Personal questions',
         duration: '1-2 min',
         prompt:
-          'Introduce yourself and describe your English study routine now. Then explain what has changed since you started working regularly with Ramazan.',
+          'Introduce yourself and describe your English study routine now. Then explain what has changed since you began working regularly with Ramazan and what feels more comfortable now than before.',
         followUps: [
           'When do you usually study?',
-          'What has improved most recently?',
-          'Which part is still difficult?',
+          'What feels easier than it did at the beginning?',
+          'Which part still slows you down?',
         ],
       },
       {
@@ -478,10 +490,10 @@ export const examData = {
         title: 'Part 2: Long turn',
         duration: '2 min',
         prompt:
-          'Describe a lesson, exercise, or explanation that helped you understand English grammar better. Say when it happened, what was practised, and why it was useful for you.',
+          'Describe one lesson, correction, or explanation that changed the way you understand English grammar. Say when it happened, what was practised, what you understood differently after that, and why it mattered for your confidence.',
         followUps: [
           'Name the grammar area',
-          'Say what changed after that lesson',
+          'Say what changed after that moment',
           'Explain why it mattered for your confidence',
         ],
       },
@@ -490,10 +502,10 @@ export const examData = {
         title: 'Part 3: Discussion',
         duration: '2-3 min',
         prompt:
-          'Answer these questions in one recording: Why do students often repeat the same grammar mistake? Which is harder to control, tenses or question forms? How should a teacher check speaking progress before the next level?',
+          'Answer these questions in one recording: Why do students repeat the same grammar mistake even after correction? For a student like you, which is harder to control under pressure: tenses, passive voice, or question forms? What should a teacher do before moving a student to the next level?',
         followUps: [
           'Give one reason for repeated mistakes',
-          'Compare two problem areas clearly',
+          'Compare the difficult areas clearly',
           'Suggest one practical teacher strategy',
         ],
       },

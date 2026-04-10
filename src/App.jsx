@@ -180,6 +180,10 @@ function getTeacherScore(scoreMap) {
   return Object.values(scoreMap).reduce((sum, value) => sum + Number(value || 0), 0)
 }
 
+function isManualSectionReviewed(scoreMap, comment) {
+  return Object.values(scoreMap).some((value) => Number(value) > 0) || isFilled(comment)
+}
+
 function getStorageSafeState(state) {
   const safeSpeaking = {}
 
@@ -283,6 +287,21 @@ function getReadinessLabel(score, percent) {
   return 'Needs a full review cycle'
 }
 
+function getSectionVerdict(earned, possible) {
+  const percent = possible === 0 ? 0 : Math.round((earned / possible) * 100)
+
+  if (percent >= 85) {
+    return 'Secure'
+  }
+  if (percent >= 70) {
+    return 'Working well'
+  }
+  if (percent >= 55) {
+    return 'Developing'
+  }
+  return 'Needs revision'
+}
+
 function formatTimestamp(value) {
   if (!value) {
     return 'Not recorded yet'
@@ -345,16 +364,36 @@ function App() {
   const strongestAreas = [...focusAreaBreakdown].reverse().slice(0, 3)
   const writingTeacherScore = getTeacherScore(examState.teacherReview.writingScores)
   const speakingTeacherScore = getTeacherScore(examState.teacherReview.speakingScores)
-  const totalScore = readingScore.earned + listeningScore.earned + writingTeacherScore + speakingTeacherScore
-  const maxScore = readingScore.possible + listeningScore.possible + 20 + 20
-  const totalPercent = Math.round((totalScore / maxScore) * 100)
+  const writingReviewed = isManualSectionReviewed(
+    examState.teacherReview.writingScores,
+    examState.teacherReview.writingComment,
+  )
+  const speakingReviewed = isManualSectionReviewed(
+    examState.teacherReview.speakingScores,
+    examState.teacherReview.speakingComment,
+  )
+  const finalReviewReady = writingReviewed && speakingReviewed
+  const objectiveTotalScore = readingScore.earned + listeningScore.earned
+  const objectiveMaxScore = readingScore.possible + listeningScore.possible
+  const reviewedTotalScore = objectiveTotalScore + writingTeacherScore + speakingTeacherScore
+  const reviewedMaxScore = objectiveMaxScore + 20 + 20
+  const totalScore = finalReviewReady ? reviewedTotalScore : objectiveTotalScore
+  const maxScore = finalReviewReady ? reviewedMaxScore : objectiveMaxScore
+  const totalPercent = maxScore === 0 ? 0 : Math.round((totalScore / maxScore) * 100)
   const completion = getCompletionStatus(examState)
   const completedSkills = Object.values(completion).filter(Boolean).length
   const progressPercent = Math.round((completedSkills / 4) * 100)
-  const readinessLabel = getReadinessLabel(totalScore, totalPercent)
+  const readinessLabel = finalReviewReady ? getReadinessLabel(totalScore, totalPercent) : 'Awaiting reviewer marks'
   const allSectionsFinished = Object.values(completion).every(Boolean)
   const topRevisionPriority = revisionPriorities[0]?.tag || 'No urgent priority detected'
   const topStrength = strongestAreas[0]?.tag || 'Balanced objective profile'
+  const readingVerdict = getSectionVerdict(readingScore.earned, readingScore.possible)
+  const listeningVerdict = getSectionVerdict(listeningScore.earned, listeningScore.possible)
+  const studentSummary = allSectionsFinished
+    ? finalReviewReady
+      ? `${examData.meta.studentName} has completed the full private session. The current strongest objective area is ${topStrength.toLowerCase()}, while the clearest next focus is ${topRevisionPriority.toLowerCase()}.`
+      : `${examData.meta.studentName} has completed the full private session. Reading and listening are locked in, and writing plus speaking are waiting for reviewer marks.`
+    : `${examData.meta.studentName}'s session is still in progress. Finish all four skills to lock the full readiness picture and certificate.`
 
   useEffect(() => {
     window.localStorage.setItem(
@@ -673,6 +712,11 @@ function App() {
       results: {
         readingScore,
         listeningScore,
+        objectiveTotalScore,
+        objectiveMaxScore,
+        writingReviewed,
+        speakingReviewed,
+        finalReviewReady,
         writingTeacherScore,
         speakingTeacherScore,
         totalScore,
@@ -869,6 +913,26 @@ function App() {
             </div>
           </div>
 
+          <div className="two-column profile-bands">
+            <div className="content-card">
+              <h3>Designed around Galina</h3>
+              <ul className="plain-list">
+                {examData.overview.designedFor.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="content-card">
+              <h3>What success should look like</h3>
+              <ul className="plain-list">
+                {examData.overview.successPicture.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+
           <div className="focus-strip">
             {examData.meta.focusAreas.map((area) => (
               <span key={area}>{area}</span>
@@ -1033,8 +1097,8 @@ function App() {
               <h2>{examData.writing.sectionTitle}</h2>
             </div>
             <div className="score-pill">
-              <span>Teacher scored later</span>
-              <strong>{writingTeacherScore}/20</strong>
+              <span>{writingReviewed ? 'Reviewer score saved' : 'Reviewer score pending'}</span>
+              <strong>{writingReviewed ? `${writingTeacherScore}/20` : 'Pending review'}</strong>
             </div>
           </div>
           <SectionPrelude config={SKILL_SECTION_MAP.writing} />
@@ -1092,8 +1156,8 @@ function App() {
               <h2>{examData.speaking.sectionTitle}</h2>
             </div>
             <div className="score-pill">
-              <span>Teacher scored later</span>
-              <strong>{speakingTeacherScore}/20</strong>
+              <span>{speakingReviewed ? 'Reviewer score saved' : 'Reviewer score pending'}</span>
+              <strong>{speakingReviewed ? `${speakingTeacherScore}/20` : 'Pending review'}</strong>
             </div>
           </div>
           <SectionPrelude config={SKILL_SECTION_MAP.speaking} />
@@ -1175,15 +1239,11 @@ function App() {
 
           <div className="results-editorial">
             <article className="content-card">
-              <h3>Galina&apos;s picture</h3>
-              <p>
-                {allSectionsFinished
-                  ? `All four skills are complete. The current strongest objective area is ${topStrength.toLowerCase()}, while the next revision priority is ${topRevisionPriority.toLowerCase()}.`
-                  : 'The exam is still in progress. Complete all four skills to lock the final picture and certificate.'}
-              </p>
+              <h3>Private assessment</h3>
+              <p>{studentSummary}</p>
             </article>
             <article className="content-card">
-              <h3>What this score means</h3>
+              <h3>Interpretation</h3>
               <p>
                 This is a private readiness score, not an official IELTS result. It is designed to show how securely
                 Galina can use the Unit 1-45 grammar and communication patterns under mild exam pressure.
@@ -1193,58 +1253,54 @@ function App() {
 
           <div className="results-grid">
             <article className="result-card">
-              <span>Reading</span>
+              <span>Reading accuracy</span>
               <strong>
                 {readingScore.earned}/{readingScore.possible}
               </strong>
-              <p>
-                {readingScore.answered}/{readingScore.totalQuestions} questions answered
-              </p>
+              <p>{readingVerdict}</p>
             </article>
 
             <article className="result-card">
-              <span>Listening</span>
+              <span>Listening focus</span>
               <strong>
                 {listeningScore.earned}/{listeningScore.possible}
               </strong>
-              <p>
-                {listeningScore.answered}/{listeningScore.totalQuestions} questions answered
-              </p>
+              <p>{listeningVerdict}</p>
             </article>
 
-            <article className="result-card">
-              <span>Writing</span>
-              <strong>{writingTeacherScore}/20</strong>
-              <p>Teacher-reviewed rubric</p>
+            <article className={`result-card ${writingReviewed ? '' : 'pending'}`.trim()}>
+              <span>Writing review</span>
+              <strong>{writingReviewed ? `${writingTeacherScore}/20` : 'Pending review'}</strong>
+              <p>{writingReviewed ? 'Reviewer marks saved' : 'Reviewer-scored after submission'}</p>
             </article>
 
-            <article className="result-card">
-              <span>Speaking</span>
-              <strong>{speakingTeacherScore}/20</strong>
-              <p>Teacher-reviewed rubric</p>
+            <article className={`result-card ${speakingReviewed ? '' : 'pending'}`.trim()}>
+              <span>Speaking review</span>
+              <strong>{speakingReviewed ? `${speakingTeacherScore}/20` : 'Pending review'}</strong>
+              <p>{speakingReviewed ? 'Reviewer marks saved' : 'Reviewer-scored after submission'}</p>
             </article>
           </div>
 
-          <div className="completion-banner">
+          <div className={`completion-banner ${finalReviewReady ? '' : 'pending'}`.trim()}>
             <div>
-              <span>Total score</span>
+              <span>{finalReviewReady ? 'Total score' : 'Current scored sections'}</span>
               <strong>
                 {totalScore}/{maxScore}
               </strong>
             </div>
             <div>
-              <span>Percent</span>
+              <span>{finalReviewReady ? 'Percent' : 'Current percent'}</span>
               <strong>{totalPercent}%</strong>
             </div>
             <div>
-              <span>Pass line</span>
-              <strong>{examData.meta.passPercentage}%</strong>
+              <span>{finalReviewReady ? 'Pass line' : 'Final review'}</span>
+              <strong>{finalReviewReady ? `${examData.meta.passPercentage}%` : 'Writing + speaking pending'}</strong>
             </div>
           </div>
 
           <div className="teacher-panel diagnostics-panel">
             <div className="teacher-column">
-              <h3>Revision priorities</h3>
+              <h3>Next revision focus</h3>
               <div className="diagnostic-list">
                 {revisionPriorities.length > 0 ? (
                   revisionPriorities.map((item) => (
@@ -1265,9 +1321,9 @@ function App() {
             </div>
 
             <div className="teacher-column">
-            <h3>Strongest objective areas</h3>
-            <div className="diagnostic-list">
-              {strongestAreas.map((item) => (
+              <h3>Most confident areas</h3>
+              <div className="diagnostic-list">
+                {strongestAreas.map((item) => (
                   <article key={item.tag} className="diagnostic-card">
                     <div>
                       <span>{item.tag}</span>
@@ -1356,7 +1412,7 @@ function App() {
 
           {teacherMode && (
             <div className="teacher-summary">
-              <h3>Teacher summary</h3>
+              <h3>Reviewer summary</h3>
               <textarea
                 className="teacher-textarea"
                 rows={4}
@@ -1383,7 +1439,7 @@ function App() {
               </div>
               <div>
                 <span>Final score</span>
-                <strong>{totalScore}/{maxScore}</strong>
+                <strong>{finalReviewReady ? `${totalScore}/${maxScore}` : 'Pending reviewer marks'}</strong>
               </div>
             </div>
             <p className="certificate-footer">{examData.meta.certificateFooter}</p>

@@ -395,6 +395,57 @@
   padding: 22px;
 }
 
+.profile-bands .content-card,
+.results-editorial .content-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.profile-bands .content-card:first-child {
+  background:
+    linear-gradient(145deg, rgba(92, 31, 34, 0.95), rgba(65, 25, 31, 0.96)),
+    rgba(92, 31, 34, 0.94);
+  border-color: rgba(92, 31, 34, 0.2);
+  color: #fff7ef;
+}
+
+.profile-bands .content-card:first-child::after,
+.results-editorial .content-card:first-child::after {
+  content: '';
+  position: absolute;
+  inset: auto -42px -54px auto;
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.16), transparent 70%);
+  pointer-events: none;
+}
+
+.profile-bands .content-card:first-child h3,
+.profile-bands .content-card:first-child .plain-list,
+.profile-bands .content-card:first-child .plain-list li {
+  color: inherit;
+}
+
+.profile-bands .content-card:last-child {
+  background:
+    linear-gradient(180deg, rgba(255, 252, 247, 0.98), rgba(248, 238, 226, 0.96)),
+    rgba(255, 252, 247, 0.96);
+  border-color: rgba(197, 154, 74, 0.26);
+}
+
+.results-editorial .content-card:first-child {
+  background:
+    linear-gradient(145deg, rgba(255, 250, 244, 0.98), rgba(246, 234, 219, 0.96)),
+    rgba(255, 250, 244, 0.96);
+}
+
+.results-editorial .content-card:last-child {
+  background:
+    linear-gradient(145deg, rgba(250, 244, 236, 0.98), rgba(255, 251, 246, 0.98)),
+    rgba(255, 251, 246, 0.96);
+}
+
 .content-card h3,
 .exam-card h3,
 .teacher-column h3,
@@ -793,6 +844,14 @@
 .result-card {
   padding: 20px;
   animation: riseIn 460ms both;
+  background: linear-gradient(180deg, rgba(255, 253, 249, 0.98), rgba(248, 239, 228, 0.9));
+  border-color: rgba(92, 31, 34, 0.08);
+}
+
+.result-card.pending {
+  background: linear-gradient(180deg, rgba(251, 246, 239, 0.98), rgba(244, 233, 219, 0.92));
+  border-style: dashed;
+  border-color: rgba(197, 154, 74, 0.32);
 }
 
 .result-card p {
@@ -809,6 +868,11 @@
   border-radius: var(--radius-lg);
   border: 1px solid rgba(197, 154, 74, 0.3);
   background: linear-gradient(120deg, rgba(197, 154, 74, 0.18), rgba(92, 31, 34, 0.06));
+}
+
+.completion-banner.pending {
+  border-color: rgba(197, 154, 74, 0.34);
+  background: linear-gradient(120deg, rgba(197, 154, 74, 0.16), rgba(255, 248, 239, 0.95));
 }
 
 .results-editorial {
