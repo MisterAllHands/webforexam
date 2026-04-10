@@ -678,8 +678,7 @@
 
 .short-answer,
 .essay-field,
-.teacher-textarea,
-.voice-bar select {
+.teacher-textarea {
   width: 100%;
   border: 1px solid var(--border);
   border-radius: 16px;
@@ -705,34 +704,10 @@
 
 .short-answer:focus,
 .essay-field:focus,
-.teacher-textarea:focus,
-.voice-bar select:focus {
+.teacher-textarea:focus {
   outline: none;
   border-color: rgba(92, 31, 34, 0.35);
   box-shadow: 0 0 0 4px rgba(92, 31, 34, 0.08);
-}
-
-.voice-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: end;
-  gap: 12px;
-  margin-top: 20px;
-}
-
-.voice-bar label {
-  display: grid;
-  gap: 8px;
-  min-width: min(420px, 100%);
-}
-
-.voice-bar span {
-  color: var(--text-soft);
-}
-
-.voice-bar select {
-  min-height: 48px;
-  padding: 0 14px;
 }
 
 .listening-controls,
@@ -741,6 +716,67 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 12px;
+}
+
+.listening-player {
+  margin-top: 18px;
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(92, 31, 34, 0.12);
+  background: linear-gradient(180deg, rgba(255, 251, 246, 0.98), rgba(250, 243, 234, 0.95));
+}
+
+.player-topline {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.player-label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--accent);
+}
+
+.player-topline strong {
+  font-size: 1.1rem;
+}
+
+.player-meta {
+  display: grid;
+  gap: 6px;
+  text-align: right;
+  color: var(--text-soft);
+  font-size: 0.92rem;
+}
+
+.player-progress {
+  position: relative;
+  width: 100%;
+  height: 12px;
+  margin-top: 16px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(92, 31, 34, 0.1);
+}
+
+.player-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  transition: width 140ms linear;
+}
+
+.player-caption {
+  color: var(--text-soft);
+}
+
+.reviewer-actions {
+  margin-top: 12px;
 }
 
 .audio-player {
@@ -985,6 +1021,14 @@
   .hero-card,
   .section-panel {
     padding: 22px;
+  }
+
+  .player-topline {
+    flex-direction: column;
+  }
+
+  .player-meta {
+    text-align: left;
   }
 
   .option-list.compact,

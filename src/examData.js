@@ -29,7 +29,7 @@ export const examData = {
     rules: [
       'Complete the exam in a quiet room and use headphones for listening.',
       'Do not open the grammar book during the test.',
-      'Each listening text can be played only two times.',
+      'Each listening track can be played only three times.',
       'Finish the writing tasks before you record speaking.',
       'At the end, download the submission file and send it to Ramazan the same day.',
     ],
@@ -42,7 +42,7 @@ export const examData = {
     ],
     signatureMoments: [
       'Reading checks detail and grammar meaning together.',
-      'Listening is timed and disciplined, with only two plays.',
+      'Listening is timed and disciplined, with only three plays.',
       'Writing requires controlled grammar, not only ideas.',
       'Speaking should sound natural, calm, and clear.',
     ],
@@ -232,9 +232,9 @@ export const examData = {
   listening: {
     sectionTitle: 'Listening | Аудирование',
     instruction:
-      'Use headphones if possible. Each recording can be played two times. Answer while you listen.',
-    ttsNote:
-      'This final draft uses browser speech synthesis. If you want a more polished voice later, replace the scripts with MP3 files in this content file.',
+      'Use headphones if possible. Each track can be played three times. It cannot be paused, slowed down, or scrubbed.',
+    playerNote:
+      'Press play only when you are ready. Watch the progress line and remaining time while the track runs.',
     coachNote:
       'Listening should feel disciplined. Galina needs to catch exact details, tense reference, and passive forms without reading a transcript.',
     strategy:
@@ -249,14 +249,13 @@ export const examData = {
       {
         id: 'listening-review',
         title: 'Audio 1: Ramazan reviews the last week',
-        maxPlays: 2,
+        maxPlays: 3,
+        audioSrc: `${import.meta.env.BASE_URL}audio/listening-review.m4a`,
         listenFor: [
           'day and sequence',
           'difference between direct and indirect questions',
           'past simple versus present perfect',
         ],
-        ttsText:
-          "Hello, Galina. Before the exam, let's quickly review what we did last week. We finished Unit 45 on Tuesday, and on Wednesday we checked question forms again. You answered most direct questions well, but you were slower with indirect questions. After that, we compared the past simple with the present perfect. I reminded you that we say, 'I went there last year,' but 'I have visited many places this year.' On Friday, we worked on the passive voice. Several sentences were corrected, and one short paragraph was rewritten. Tonight, please revise your notebook for twenty minutes and then rest.",
         questions: [
           {
             id: 'listening-1',
@@ -315,14 +314,13 @@ export const examData = {
       {
         id: 'listening-project',
         title: 'Audio 2: Class project announcement',
-        maxPlays: 2,
+        maxPlays: 3,
+        audioSrc: `${import.meta.env.BASE_URL}audio/listening-project.m4a`,
         listenFor: [
           'who did the action',
           'what has already been completed',
           'what will happen next',
         ],
-        ttsText:
-          "Next month, our class project will be shown at the centre. The title was chosen by the students last Friday, and the poster has already been printed. Two short interviews were recorded yesterday, but the third one has not been finished yet. The final version will be checked on Tuesday morning. During the event, visitors will answer five simple questions after they listen to the recordings. If everything goes well, the project will be shared on the school's website the next day.",
         questions: [
           {
             id: 'listening-6',

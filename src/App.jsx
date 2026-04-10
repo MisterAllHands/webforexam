@@ -11,6 +11,20 @@ const SKILL_SECTION_MAP = {
   speaking: examData.speaking,
 }
 
+function createInitialAudioState() {
+  return Object.fromEntries(
+    examData.listening.sections.map((section) => [
+      section.id,
+      {
+        currentTime: 0,
+        duration: 0,
+        isPlaying: false,
+        hasFinished: false,
+      },
+    ]),
+  )
+}
+
 function createInitialState() {
   const answers = {}
   const writing = {}
@@ -283,6 +297,18 @@ function formatTimestamp(value) {
   })
 }
 
+function formatDuration(seconds) {
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    return '0:00'
+  }
+
+  const wholeSeconds = Math.ceil(seconds)
+  const minutes = Math.floor(wholeSeconds / 60)
+  const remainder = wholeSeconds % 60
+
+  return `${minutes}:${String(remainder).padStart(2, '0')}`
+}
+
 function createDownload(filename, content, type) {
   const url = URL.createObjectURL(new Blob([content], { type }))
   const link = document.createElement('a')
@@ -295,9 +321,8 @@ function createDownload(filename, content, type) {
 function App() {
   const [examState, setExamState] = useState(() => loadSavedState())
   const [currentSection, setCurrentSection] = useState('overview')
-  const [voiceOptions, setVoiceOptions] = useState([])
-  const [selectedVoiceUri, setSelectedVoiceUri] = useState('')
   const [playCounts, setPlayCounts] = useState({})
+  const [audioState, setAudioState] = useState(() => createInitialAudioState())
   const [activeListeningId, setActiveListeningId] = useState('')
   const [listeningError, setListeningError] = useState('')
   const [recordingError, setRecordingError] = useState('')
@@ -342,34 +367,36 @@ function App() {
   }, [examState])
 
   useEffect(() => {
-    const loadVoices = () => {
-      const voices = window.speechSynthesis
-        ? window.speechSynthesis.getVoices().filter((voice) => voice.lang.toLowerCase().startsWith('en'))
-        : []
+    const metadataPlayers = examData.listening.sections.map((section) => {
+      const player = new Audio(section.audioSrc)
+      player.preload = 'metadata'
 
-      setVoiceOptions(voices)
-
-      if (!selectedVoiceUri && voices.length > 0) {
-        setSelectedVoiceUri(voices[0].voiceURI)
+      const handleLoadedMetadata = () => {
+        setAudioState((current) => ({
+          ...current,
+          [section.id]: {
+            ...current[section.id],
+            duration: Number.isFinite(player.duration) ? player.duration : current[section.id].duration,
+          },
+        }))
       }
-    }
 
-    loadVoices()
+      player.addEventListener('loadedmetadata', handleLoadedMetadata)
 
-    if (window.speechSynthesis) {
-      window.speechSynthesis.addEventListener('voiceschanged', loadVoices)
-    }
+      return { player, handleLoadedMetadata }
+    })
 
     return () => {
-      if (window.speechSynthesis) {
-        window.speechSynthesis.cancel()
-        window.speechSynthesis.removeEventListener('voiceschanged', loadVoices)
-      }
       if (audioRef.current) {
         audioRef.current.pause()
       }
+
+      metadataPlayers.forEach(({ player, handleLoadedMetadata }) => {
+        player.removeEventListener('loadedmetadata', handleLoadedMetadata)
+        player.src = ''
+      })
     }
-  }, [selectedVoiceUri])
+  }, [])
 
   const updateAnswer = (questionId, value) => {
     setExamState((current) => ({
@@ -418,31 +445,46 @@ function App() {
     }))
   }
 
+  const goToSection = (sectionId) => {
+    if (currentSection === 'listening' && sectionId !== 'listening') {
+      stopListeningPlayback()
+    }
+
+    setCurrentSection(sectionId)
+  }
+
   const startExam = () => {
     setExamState((current) => ({
       ...current,
       startedAt: current.startedAt || new Date().toISOString(),
     }))
-    setCurrentSection('reading')
+    goToSection('reading')
   }
 
   const stopListeningPlayback = () => {
-    if (window.speechSynthesis) {
-      window.speechSynthesis.cancel()
-    }
     if (audioRef.current) {
+      const sectionId = activeListeningId
       audioRef.current.pause()
       audioRef.current.currentTime = 0
+      audioRef.current.src = ''
+      audioRef.current = null
+
+      if (sectionId) {
+        setAudioState((current) => ({
+          ...current,
+          [sectionId]: {
+            ...current[sectionId],
+            currentTime: 0,
+            isPlaying: false,
+            hasFinished: false,
+          },
+        }))
+      }
     }
     setActiveListeningId('')
   }
 
   const playListeningSection = (section) => {
-    if (!window.speechSynthesis && !section.audioSrc) {
-      setListeningError('This browser does not support speech playback.')
-      return
-    }
-
     if ((playCounts[section.id] || 0) >= section.maxPlays) {
       setListeningError('Maximum playback count reached for this audio.')
       return
@@ -457,37 +499,84 @@ function App() {
     }))
     setActiveListeningId(section.id)
 
-    if (section.audioSrc) {
-      const audio = new Audio(section.audioSrc)
-      audioRef.current = audio
-      audio.onended = () => setActiveListeningId('')
-      audio.onerror = () => {
-        setListeningError('The audio file could not be loaded.')
-        setActiveListeningId('')
-      }
-      audio.play().catch(() => {
-        setListeningError('Playback was blocked by the browser.')
-        setActiveListeningId('')
-      })
-      return
+    setAudioState((current) => ({
+      ...current,
+      [section.id]: {
+        ...current[section.id],
+        currentTime: 0,
+        isPlaying: true,
+        hasFinished: false,
+      },
+    }))
+
+    const audio = new Audio(section.audioSrc)
+    audioRef.current = audio
+    audio.preload = 'auto'
+    audio.playbackRate = 1
+    audio.defaultPlaybackRate = 1
+
+    audio.onloadedmetadata = () => {
+      setAudioState((current) => ({
+        ...current,
+        [section.id]: {
+          ...current[section.id],
+          duration: Number.isFinite(audio.duration) ? audio.duration : current[section.id].duration,
+        },
+      }))
     }
 
-    const utterance = new SpeechSynthesisUtterance(section.ttsText)
-    const selectedVoice = voiceOptions.find((voice) => voice.voiceURI === selectedVoiceUri)
-
-    if (selectedVoice) {
-      utterance.voice = selectedVoice
+    audio.ontimeupdate = () => {
+      setAudioState((current) => ({
+        ...current,
+        [section.id]: {
+          ...current[section.id],
+          currentTime: audio.currentTime,
+          duration: Number.isFinite(audio.duration) ? audio.duration : current[section.id].duration,
+          isPlaying: true,
+        },
+      }))
     }
 
-    utterance.rate = 0.95
-    utterance.pitch = 1
-    utterance.onend = () => setActiveListeningId('')
-    utterance.onerror = () => {
-      setListeningError('The browser could not play this TTS segment.')
+    audio.onended = () => {
+      setAudioState((current) => ({
+        ...current,
+        [section.id]: {
+          ...current[section.id],
+          currentTime: current[section.id].duration || audio.duration || current[section.id].currentTime,
+          duration: Number.isFinite(audio.duration) ? audio.duration : current[section.id].duration,
+          isPlaying: false,
+          hasFinished: true,
+        },
+      }))
       setActiveListeningId('')
+      audioRef.current = null
     }
 
-    window.speechSynthesis.speak(utterance)
+    audio.onerror = () => {
+      setListeningError('The audio file could not be loaded.')
+      setAudioState((current) => ({
+        ...current,
+        [section.id]: {
+          ...current[section.id],
+          isPlaying: false,
+        },
+      }))
+      setActiveListeningId('')
+      audioRef.current = null
+    }
+
+    audio.play().catch(() => {
+      setListeningError('Playback was blocked by the browser.')
+      setAudioState((current) => ({
+        ...current,
+        [section.id]: {
+          ...current[section.id],
+          isPlaying: false,
+        },
+      }))
+      setActiveListeningId('')
+      audioRef.current = null
+    })
   }
 
   const startRecording = async (partId) => {
@@ -612,7 +701,7 @@ function App() {
       const nextState = mergeImportedState(parsed.state || parsed)
       setExamState(nextState)
       setTeacherMode(true)
-      setCurrentSection('results')
+      goToSection('results')
     } catch {
       setRecordingError('The submission file could not be imported.')
     } finally {
@@ -628,6 +717,19 @@ function App() {
     window.localStorage.removeItem(STORAGE_KEY)
     setExamState(createInitialState())
     setPlayCounts({})
+    setAudioState((current) =>
+      Object.fromEntries(
+        Object.entries(current).map(([sectionId, state]) => [
+          sectionId,
+          {
+            ...state,
+            currentTime: 0,
+            isPlaying: false,
+            hasFinished: false,
+          },
+        ]),
+      ),
+    )
     setCurrentSection('overview')
     setTeacherMode(false)
   }
@@ -640,7 +742,15 @@ function App() {
     const currentIndex = EXAM_SECTIONS.indexOf(currentSection)
     const next = EXAM_SECTIONS[currentIndex + 1]
     if (next) {
-      setCurrentSection(next)
+      goToSection(next)
+    }
+  }
+
+  const previousSection = () => {
+    const currentIndex = EXAM_SECTIONS.indexOf(currentSection)
+    const previous = EXAM_SECTIONS[currentIndex - 1]
+    if (previous) {
+      goToSection(previous)
     }
   }
 
@@ -716,7 +826,7 @@ function App() {
               <button
                 key={sectionId}
                 className={`nav-chip ${isActive ? 'active' : ''} ${isComplete ? 'complete' : ''}`}
-                onClick={() => setCurrentSection(sectionId)}
+                onClick={() => goToSection(sectionId)}
                 type="button"
               >
                 {label}
@@ -838,6 +948,9 @@ function App() {
             <button className="primary-button" type="button" onClick={nextSection}>
               Continue to listening
             </button>
+            <button className="ghost-button" type="button" onClick={goToSection.bind(null, 'overview')}>
+              Back to overview
+            </button>
           </div>
         </section>
       )}
@@ -859,30 +972,7 @@ function App() {
           <SectionPrelude config={SKILL_SECTION_MAP.listening} />
 
           <p className="instruction-text">{examData.listening.instruction}</p>
-          <p className="support-note">{examData.listening.ttsNote}</p>
-
-          <div className="voice-bar">
-            <label>
-              <span>English voice</span>
-              <select
-                value={selectedVoiceUri}
-                onChange={(event) => setSelectedVoiceUri(event.target.value)}
-                disabled={voiceOptions.length === 0}
-              >
-                {voiceOptions.length === 0 && <option>No voices found</option>}
-                {voiceOptions.map((voice) => (
-                  <option key={voice.voiceURI} value={voice.voiceURI}>
-                    {voice.name} ({voice.lang})
-                  </option>
-                ))}
-              </select>
-            </label>
-            {activeListeningId && (
-              <button className="ghost-button" type="button" onClick={stopListeningPlayback}>
-                Stop audio
-              </button>
-            )}
-          </div>
+          <p className="support-note">{examData.listening.playerNote}</p>
 
           {listeningError && <p className="error-text">{listeningError}</p>}
 
@@ -901,16 +991,14 @@ function App() {
                 ))}
               </div>
 
-              <div className="listening-controls">
-                <button
-                  className={`primary-button ${activeListeningId === section.id ? 'is-active' : ''}`}
-                  type="button"
-                  disabled={(playCounts[section.id] || 0) >= section.maxPlays}
-                  onClick={() => playListeningSection(section)}
-                >
-                  {activeListeningId === section.id ? 'Playing…' : `Play audio ${sectionIndex + 1}`}
-                </button>
-              </div>
+              <ListeningPlayer
+                activeListeningId={activeListeningId}
+                audioState={audioState[section.id]}
+                onPlay={() => playListeningSection(section)}
+                playCount={playCounts[section.id] || 0}
+                section={section}
+                sectionIndex={sectionIndex}
+              />
 
               <div className="question-grid">
                 {section.questions.map((question, index) => (
@@ -929,6 +1017,9 @@ function App() {
           <div className="action-row">
             <button className="primary-button" type="button" onClick={nextSection}>
               Continue to writing
+            </button>
+            <button className="ghost-button" type="button" onClick={previousSection}>
+              Back to reading
             </button>
           </div>
         </section>
@@ -985,6 +1076,9 @@ function App() {
           <div className="action-row">
             <button className="primary-button" type="button" onClick={nextSection}>
               Continue to speaking
+            </button>
+            <button className="ghost-button" type="button" onClick={previousSection}>
+              Back to listening
             </button>
           </div>
         </section>
@@ -1058,6 +1152,9 @@ function App() {
           <div className="action-row">
             <button className="primary-button" type="button" onClick={nextSection}>
               Go to results
+            </button>
+            <button className="ghost-button" type="button" onClick={previousSection}>
+              Back to writing
             </button>
           </div>
         </section>
@@ -1189,17 +1286,31 @@ function App() {
             <button className="primary-button" type="button" onClick={exportSubmission}>
               Download submission file
             </button>
-            <label className="ghost-button file-trigger" htmlFor={importInputId}>
-              Import reviewer file
-            </label>
-            <input id={importInputId} className="hidden-input" type="file" accept="application/json" onChange={importSubmission} />
             <button className="ghost-button" type="button" onClick={printCertificate}>
               Print certificate
             </button>
             <button className="ghost-button" type="button" onClick={() => setTeacherMode((current) => !current)}>
-              {teacherMode ? 'Hide reviewer panel' : 'Show reviewer panel'}
+              {teacherMode ? 'Hide reviewer tools' : 'Open reviewer tools'}
+            </button>
+            <button className="ghost-button" type="button" onClick={previousSection}>
+              Back to speaking
             </button>
           </div>
+
+          {teacherMode && (
+            <div className="action-row reviewer-actions">
+              <label className="ghost-button file-trigger" htmlFor={importInputId}>
+                Import reviewer file
+              </label>
+              <input
+                id={importInputId}
+                className="hidden-input"
+                type="file"
+                accept="application/json"
+                onChange={importSubmission}
+              />
+            </div>
+          )}
 
           {teacherMode && (
             <div className="teacher-panel">
@@ -1344,6 +1455,54 @@ function QuestionCard({ index, question, value, onChange }) {
           value={value}
         />
       )}
+    </div>
+  )
+}
+
+function ListeningPlayer({ activeListeningId, audioState, onPlay, playCount, section, sectionIndex }) {
+  const isPlaying = activeListeningId === section.id && audioState.isPlaying
+  const remainingTime = Math.max(0, (audioState.duration || 0) - (audioState.currentTime || 0))
+  const progressPercent =
+    audioState.duration > 0 ? Math.min(100, (audioState.currentTime / audioState.duration) * 100) : 0
+  const isDisabled = isPlaying || playCount >= section.maxPlays
+
+  let buttonLabel = `Play track ${sectionIndex + 1}`
+
+  if (isPlaying) {
+    buttonLabel = 'Playing now'
+  } else if (playCount > 0 && playCount < section.maxPlays) {
+    buttonLabel = `Replay track ${sectionIndex + 1}`
+  } else if (playCount >= section.maxPlays) {
+    buttonLabel = 'Replay limit reached'
+  }
+
+  return (
+    <div className="listening-player">
+      <div className="player-topline">
+        <div>
+          <span className="player-label">Track status</span>
+          <strong>{isPlaying ? 'In progress' : audioState.hasFinished ? 'Completed' : 'Ready'}</strong>
+        </div>
+        <div className="player-meta">
+          <span>
+            Plays: {playCount}/{section.maxPlays}
+          </span>
+          <span>Time left: {formatDuration(remainingTime)}</span>
+        </div>
+      </div>
+
+      <div className="player-progress" aria-hidden="true">
+        <div className="player-progress-fill" style={{ width: `${progressPercent}%` }} />
+      </div>
+
+      <div className="listening-controls">
+        <button className={`primary-button ${isPlaying ? 'is-active' : ''}`} type="button" disabled={isDisabled} onClick={onPlay}>
+          {buttonLabel}
+        </button>
+        <p className="player-caption">
+          No pause. No speed change. Start only when ready.
+        </p>
+      </div>
     </div>
   )
 }
