@@ -383,6 +383,10 @@ function App() {
   const completion = getCompletionStatus(examState)
   const completedSkills = Object.values(completion).filter(Boolean).length
   const progressPercent = Math.round((completedSkills / 4) * 100)
+  const writingCompletedCount = examData.writing.tasks.filter((task) => isFilled(examState.writing[task.id])).length
+  const speakingCompletedCount = examData.speaking.parts.filter(
+    (part) => examState.speaking[part.id] && examState.speaking[part.id].recording,
+  ).length
   const readinessLabel = finalReviewReady ? getReadinessLabel(totalScore, totalPercent) : 'Awaiting reviewer marks'
   const allSectionsFinished = Object.values(completion).every(Boolean)
   const topRevisionPriority = revisionPriorities[0]?.tag || 'No urgent priority detected'
@@ -933,21 +937,6 @@ function App() {
             </div>
           </div>
 
-          <div className="focus-strip">
-            {examData.meta.focusAreas.map((area) => (
-              <span key={area}>{area}</span>
-            ))}
-          </div>
-
-          <div className="signature-grid">
-            {examData.overview.signatureMoments.map((item, index) => (
-              <article key={item} className="signature-card" style={{ '--card-delay': `${index * 80}ms` }}>
-                <span>Exam tone</span>
-                <p>{item}</p>
-              </article>
-            ))}
-          </div>
-
           <div className="action-row">
             <button className="primary-button" type="button" onClick={startExam}>
               {examState.startedAt ? 'Continue exam' : 'Start exam'}
@@ -972,9 +961,9 @@ function App() {
               <h2>{examData.reading.sectionTitle}</h2>
             </div>
             <div className="score-pill">
-              <span>Auto-scored</span>
+              <span>Questions answered</span>
               <strong>
-                {readingScore.earned}/{readingScore.possible}
+                {readingScore.answered}/{readingScore.totalQuestions}
               </strong>
             </div>
           </div>
@@ -1027,9 +1016,9 @@ function App() {
               <h2>{examData.listening.sectionTitle}</h2>
             </div>
             <div className="score-pill">
-              <span>Auto-scored</span>
+              <span>Questions answered</span>
               <strong>
-                {listeningScore.earned}/{listeningScore.possible}
+                {listeningScore.answered}/{listeningScore.totalQuestions}
               </strong>
             </div>
           </div>
@@ -1097,8 +1086,8 @@ function App() {
               <h2>{examData.writing.sectionTitle}</h2>
             </div>
             <div className="score-pill">
-              <span>{writingReviewed ? 'Reviewer score saved' : 'Reviewer score pending'}</span>
-              <strong>{writingReviewed ? `${writingTeacherScore}/20` : 'Pending review'}</strong>
+              <span>Tasks drafted</span>
+              <strong>{writingCompletedCount}/{examData.writing.tasks.length}</strong>
             </div>
           </div>
           <SectionPrelude config={SKILL_SECTION_MAP.writing} />
@@ -1156,8 +1145,8 @@ function App() {
               <h2>{examData.speaking.sectionTitle}</h2>
             </div>
             <div className="score-pill">
-              <span>{speakingReviewed ? 'Reviewer score saved' : 'Reviewer score pending'}</span>
-              <strong>{speakingReviewed ? `${speakingTeacherScore}/20` : 'Pending review'}</strong>
+              <span>Recordings saved</span>
+              <strong>{speakingCompletedCount}/{examData.speaking.parts.length}</strong>
             </div>
           </div>
           <SectionPrelude config={SKILL_SECTION_MAP.speaking} />
@@ -1565,29 +1554,25 @@ function ListeningPlayer({ activeListeningId, audioState, onPlay, playCount, sec
 
 function SectionPrelude({ config }) {
   return (
-    <div className="section-prelude">
+    <div className="section-prelude compact">
       <article className="prelude-card main">
-        <span className="mini-label">Coach note</span>
+        <span className="mini-label">How to approach this section</span>
         <h3>{config.coachNote}</h3>
         <p>{config.strategy}</p>
       </article>
 
-      <article className="prelude-card">
-        <span className="mini-label">Focus</span>
-        <div className="support-strip compact">
-          {config.targetSkills.map((item) => (
-            <span key={item}>{item}</span>
-          ))}
-        </div>
-      </article>
-
-      <article className="prelude-card">
-        <span className="mini-label">Checklist</span>
+      <article className="prelude-card prelude-side">
+        <span className="mini-label">Keep in mind</span>
         <ul className="plain-list">
           {config.checklist.map((item) => (
             <li key={item}>{item}</li>
           ))}
         </ul>
+        <div className="support-strip compact">
+          {config.targetSkills.map((item) => (
+            <span key={item}>{item}</span>
+          ))}
+        </div>
       </article>
     </div>
   )
