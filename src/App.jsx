@@ -805,7 +805,7 @@ function App() {
   return (
     <div className={`app-shell section-${currentSection}`}>
       <header className="hero-panel">
-        <div className="hero-copy">
+        <div className="hero-copy hero-copy-full">
           <p className="eyebrow">Private English session designed only for Galina</p>
           <h1>{examData.meta.examTitle}</h1>
           <p className="hero-text">{examData.meta.subtitle}</p>
@@ -814,51 +814,18 @@ function App() {
             <span>{examData.overview.introRu}</span>
           </p>
           <div className="hero-mini-strip">
-            <span>{examData.overview.mission}</span>
-            <span>{examData.overview.missionRu}</span>
-          </div>
-        </div>
-
-        <div className="hero-card">
-          <div className="stat-block">
-            <span className="stat-label">Student</span>
-            <strong>{examData.meta.studentName}</strong>
-          </div>
-          <div className="stat-block">
-            <span className="stat-label">Teacher</span>
-            <strong>{examData.meta.teacherName}</strong>
-          </div>
-          <div className="stat-block">
-            <span className="stat-label">Scope</span>
-            <strong>{examData.meta.focusUnits}</strong>
-          </div>
-          <div className="stat-block">
-            <span className="stat-label">Focus areas</span>
-            <strong>{examData.meta.focusAreas.join(' • ')}</strong>
+            <span>{examData.meta.estimatedMinutes} min</span>
+            <span>4 skills</span>
+            <span>Headphones + mic</span>
           </div>
         </div>
       </header>
-
-      <section className="surface summary-grid">
-        {examData.overview.sections.map((section, index) => (
-          <article key={section.id} className="summary-card" style={{ '--card-delay': `${index * 70}ms` }}>
-            <p className="mini-label">
-              {section.title} / {section.titleRu}
-            </p>
-            <h2>{section.duration}</h2>
-            <p>{section.description}</p>
-            <span>{section.points} points</span>
-          </article>
-        ))}
-      </section>
 
       <section className="surface nav-panel">
         <div className="progress-copy">
           <p className="mini-label">Progress</p>
           <strong>{progressPercent}% complete</strong>
-          <span>
-            {completedSkills} of 4 assessed skills completed
-          </span>
+          <span>{completedSkills} of 4 sections done</span>
           <div className="progress-track" aria-hidden="true">
             <div className="progress-fill" style={{ width: `${progressPercent}%` }} />
           </div>
@@ -889,66 +856,65 @@ function App() {
           <div className="section-heading">
             <div>
               <p className="mini-label">Session brief</p>
-              <h2>Before Galina begins</h2>
+              <h2>Start the exam</h2>
             </div>
             <div className="score-pill">
-              <span>Estimated time</span>
-              <strong>{examData.meta.estimatedMinutes} minutes</strong>
+              <span>Private session</span>
+              <strong>{examData.meta.studentName}</strong>
             </div>
           </div>
 
-          <div className="two-column">
-            <div className="content-card">
-              <h3>Exam rules</h3>
+          <div className="overview-grid">
+            <article className="content-card overview-lead">
+              <h3>Ready when you are</h3>
+              <p className="task-prompt">
+                Find a quiet place, use headphones, and finish the full session in one sitting.
+              </p>
+              <p className="support-note">{examData.overview.missionRu}</p>
+
+              <div className="quick-facts">
+                <span>{examData.meta.estimatedMinutes} minutes</span>
+                <span>One sitting</span>
+                <span>Download at the end</span>
+              </div>
+
+              <div className="action-row">
+                <button className="primary-button" type="button" onClick={startExam}>
+                  {examState.startedAt ? 'Continue exam' : 'Start exam'}
+                </button>
+                <button className="ghost-button" type="button" onClick={resetExam}>
+                  Reset session
+                </button>
+              </div>
+
+              <div className="meta-line">
+                <span>Started: {formatTimestamp(examState.startedAt)}</span>
+                <span>Progress saves automatically in this browser</span>
+              </div>
+            </article>
+
+            <article className="content-card overview-card">
+              <h3>Before you start</h3>
               <ul className="plain-list">
-                {examData.overview.rules.map((rule) => (
+                {examData.overview.rules.slice(0, 4).map((rule) => (
                   <li key={rule}>{rule}</li>
                 ))}
               </ul>
-            </div>
+            </article>
 
-            <div className="content-card">
-              <h3>Pre-flight check</h3>
-              <ul className="plain-list">
-                {examData.overview.preflightChecklist.map((item) => (
-                  <li key={item}>{item}</li>
+            <article className="content-card overview-card">
+              <h3>Today</h3>
+              <div className="overview-sections">
+                {examData.overview.sections.map((section) => (
+                  <div key={section.id} className="overview-section-item">
+                    <strong>
+                      {section.title} / {section.titleRu}
+                    </strong>
+                    <span>{section.duration}</span>
+                  </div>
                 ))}
-              </ul>
-            </div>
-          </div>
-
-          <div className="two-column profile-bands">
-            <div className="content-card">
-              <h3>Designed around Galina</h3>
-              <ul className="plain-list">
-                {examData.overview.designedFor.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </div>
-
-            <div className="content-card">
-              <h3>What success should look like</h3>
-              <ul className="plain-list">
-                {examData.overview.successPicture.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </div>
-          </div>
-
-          <div className="action-row">
-            <button className="primary-button" type="button" onClick={startExam}>
-              {examState.startedAt ? 'Continue exam' : 'Start exam'}
-            </button>
-            <button className="ghost-button" type="button" onClick={resetExam}>
-              Reset session
-            </button>
-          </div>
-
-          <div className="meta-line">
-            <span>Started: {formatTimestamp(examState.startedAt)}</span>
-            <span>Progress saves automatically in this browser</span>
+              </div>
+            </article>
           </div>
         </section>
       )}
@@ -1033,16 +999,10 @@ function App() {
             <article key={section.id} className="exam-card">
               <div className="card-header">
                 <h3>{section.title}</h3>
-                <span>
-                  Play count: {playCounts[section.id] || 0}/{section.maxPlays}
-                </span>
+                <span>Plays left: {section.maxPlays - (playCounts[section.id] || 0)}</span>
               </div>
 
-              <div className="support-strip">
-                {section.listenFor.map((item) => (
-                  <span key={item}>{item}</span>
-                ))}
-              </div>
+              <p className="hint-line">Listen for: {section.listenFor.join(' • ')}</p>
 
               <ListeningPlayer
                 activeListeningId={activeListeningId}
@@ -1110,11 +1070,7 @@ function App() {
                 </div>
 
                 <p className="task-prompt">{task.prompt}</p>
-                <div className="support-strip">
-                  {task.supportPoints.map((item) => (
-                    <span key={item}>{item}</span>
-                  ))}
-                </div>
+                <p className="hint-line">Include: {task.supportPoints.join(' • ')}</p>
                 <textarea
                   className="essay-field"
                   value={value}
@@ -1166,11 +1122,7 @@ function App() {
                 </div>
 
                 <p className="task-prompt">{part.prompt}</p>
-                <div className="support-strip">
-                  {part.followUps.map((item) => (
-                    <span key={item}>{item}</span>
-                  ))}
-                </div>
+                <p className="hint-line">Cover: {part.followUps.join(' • ')}</p>
 
                 <div className="recording-bar">
                   {activeRecordingId === part.id ? (
@@ -1228,15 +1180,9 @@ function App() {
 
           <div className="results-editorial">
             <article className="content-card">
-              <h3>Private assessment</h3>
+              <h3>Session complete</h3>
               <p>{studentSummary}</p>
-            </article>
-            <article className="content-card">
-              <h3>Interpretation</h3>
-              <p>
-                This is a private readiness score, not an official IELTS result. It is designed to show how securely
-                Galina can use the Unit 1-45 grammar and communication patterns under mild exam pressure.
-              </p>
+              <p className="support-note">Private readiness summary only. This is not an official IELTS result.</p>
             </article>
           </div>
 
@@ -1287,13 +1233,35 @@ function App() {
             </div>
           </div>
 
-          <div className="teacher-panel diagnostics-panel">
-            <div className="teacher-column">
-              <h3>Next revision focus</h3>
-              <div className="diagnostic-list">
-                {revisionPriorities.length > 0 ? (
-                  revisionPriorities.map((item) => (
-                    <article key={item.tag} className="diagnostic-card priority">
+          <details className="results-details">
+            <summary>Show revision details</summary>
+            <div className="teacher-panel diagnostics-panel">
+              <div className="teacher-column">
+                <h3>Next revision focus</h3>
+                <div className="diagnostic-list">
+                  {revisionPriorities.length > 0 ? (
+                    revisionPriorities.map((item) => (
+                      <article key={item.tag} className="diagnostic-card priority">
+                        <div>
+                          <span>{item.tag}</span>
+                          <strong>{item.percent}%</strong>
+                        </div>
+                        <p>
+                          {item.earned}/{item.possible} points across {item.totalQuestions} tasks
+                        </p>
+                      </article>
+                    ))
+                  ) : (
+                    <p className="support-note">No low-scoring grammar area has been detected in the auto-scored sections.</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="teacher-column">
+                <h3>Most confident areas</h3>
+                <div className="diagnostic-list">
+                  {strongestAreas.map((item) => (
+                    <article key={item.tag} className="diagnostic-card">
                       <div>
                         <span>{item.tag}</span>
                         <strong>{item.percent}%</strong>
@@ -1302,30 +1270,11 @@ function App() {
                         {item.earned}/{item.possible} points across {item.totalQuestions} tasks
                       </p>
                     </article>
-                  ))
-                ) : (
-                  <p className="support-note">No low-scoring grammar area has been detected in the auto-scored sections.</p>
-                )}
+                  ))}
+                </div>
               </div>
             </div>
-
-            <div className="teacher-column">
-              <h3>Most confident areas</h3>
-              <div className="diagnostic-list">
-                {strongestAreas.map((item) => (
-                  <article key={item.tag} className="diagnostic-card">
-                    <div>
-                      <span>{item.tag}</span>
-                      <strong>{item.percent}%</strong>
-                    </div>
-                    <p>
-                      {item.earned}/{item.possible} points across {item.totalQuestions} tasks
-                    </p>
-                  </article>
-                ))}
-              </div>
-            </div>
-          </div>
+          </details>
 
           <div className="action-row">
             <button className="primary-button" type="button" onClick={exportSubmission}>
@@ -1554,27 +1503,30 @@ function ListeningPlayer({ activeListeningId, audioState, onPlay, playCount, sec
 
 function SectionPrelude({ config }) {
   return (
-    <div className="section-prelude compact">
-      <article className="prelude-card main">
-        <span className="mini-label">How to approach this section</span>
-        <h3>{config.coachNote}</h3>
-        <p>{config.strategy}</p>
-      </article>
+    <details className="section-prelude">
+      <summary>Section tips</summary>
+      <div className="section-prelude-body">
+        <article className="prelude-card main">
+          <span className="mini-label">How to approach this section</span>
+          <h3>{config.coachNote}</h3>
+          <p>{config.strategy}</p>
+        </article>
 
-      <article className="prelude-card prelude-side">
-        <span className="mini-label">Keep in mind</span>
-        <ul className="plain-list">
-          {config.checklist.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-        </ul>
-        <div className="support-strip compact">
-          {config.targetSkills.map((item) => (
-            <span key={item}>{item}</span>
-          ))}
-        </div>
-      </article>
-    </div>
+        <article className="prelude-card prelude-side">
+          <span className="mini-label">Keep in mind</span>
+          <ul className="plain-list">
+            {config.checklist.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+          <div className="support-strip compact">
+            {config.targetSkills.map((item) => (
+              <span key={item}>{item}</span>
+            ))}
+          </div>
+        </article>
+      </div>
+    </details>
   )
 }
 

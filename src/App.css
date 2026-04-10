@@ -46,10 +46,7 @@
 }
 
 .hero-panel {
-  display: grid;
-  grid-template-columns: 1.35fr 0.9fr;
-  gap: 24px;
-  align-items: stretch;
+  display: block;
   margin-bottom: 20px;
 }
 
@@ -70,6 +67,10 @@
   overflow: hidden;
 }
 
+.hero-copy-full {
+  width: 100%;
+}
+
 .hero-copy::after {
   content: '';
   position: absolute;
@@ -81,7 +82,8 @@
 }
 
 .hero-mini-strip {
-  display: grid;
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 24px;
 }
@@ -200,6 +202,12 @@
 .summary-card:hover {
   transform: translateY(-6px);
   background: rgba(255, 251, 246, 0.92);
+}
+
+.overview-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) repeat(2, minmax(0, 1fr));
+  gap: 18px;
 }
 
 .nav-panel {
@@ -368,6 +376,11 @@
   margin-top: 8px;
 }
 
+.hint-line {
+  margin-top: 14px;
+  color: var(--text-soft);
+}
+
 .two-column,
 .results-grid,
 .teacher-panel {
@@ -384,14 +397,15 @@
 
 .results-editorial {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr;
   gap: 18px;
 }
 
 .section-prelude {
-  display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 1fr);
-  gap: 18px;
+  margin: 18px 0 20px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: rgba(255, 251, 246, 0.86);
 }
 
 .content-card,
@@ -407,6 +421,63 @@
 
 .content-card {
   padding: 22px;
+}
+
+.overview-lead {
+  background:
+    linear-gradient(160deg, rgba(255, 249, 242, 0.98), rgba(244, 231, 212, 0.94)),
+    rgba(255, 249, 242, 0.96);
+}
+
+.overview-card {
+  display: grid;
+  align-content: start;
+}
+
+.quick-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.quick-facts span {
+  display: inline-flex;
+  align-items: center;
+  padding: 9px 12px;
+  border-radius: 999px;
+  background: rgba(92, 31, 34, 0.08);
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.overview-sections {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.overview-section-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.overview-section-item:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.overview-section-item strong {
+  font-size: 1rem;
+}
+
+.overview-section-item span {
+  color: var(--text-soft);
+  white-space: nowrap;
 }
 
 .profile-bands .content-card,
@@ -516,12 +587,34 @@
   color: var(--text-soft);
 }
 
-.section-prelude {
-  margin: 18px 0 20px;
+.section-prelude summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 16px 18px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--accent);
 }
 
-.section-prelude.compact .prelude-card {
-  height: 100%;
+.section-prelude summary::-webkit-details-marker {
+  display: none;
+}
+
+.section-prelude summary::after {
+  content: '+';
+  float: right;
+  font-size: 1.15rem;
+}
+
+.section-prelude[open] summary::after {
+  content: '−';
+}
+
+.section-prelude-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 1fr);
+  gap: 18px;
+  padding: 0 18px 18px;
 }
 
 .prelude-card.main {
@@ -895,6 +988,39 @@
   margin: 20px 0 0;
 }
 
+.results-details {
+  margin-top: 18px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: rgba(255, 251, 246, 0.82);
+}
+
+.results-details summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 16px 18px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.results-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.results-details summary::after {
+  content: '+';
+  float: right;
+}
+
+.results-details[open] summary::after {
+  content: '−';
+}
+
+.results-details .diagnostics-panel {
+  margin-top: 0;
+  padding: 0 18px 18px;
+}
+
 .teacher-textarea {
   margin-top: 16px;
 }
@@ -1056,11 +1182,11 @@
 }
 
 @media (max-width: 1080px) {
-  .hero-panel,
+  .overview-grid,
   .summary-grid,
   .two-column,
   .signature-grid,
-  .section-prelude,
+  .section-prelude-body,
   .results-editorial,
   .results-grid,
   .teacher-panel,
@@ -1103,6 +1229,30 @@
     padding: 22px;
   }
 
+  .hero-copy h1 {
+    font-size: clamp(2.2rem, 10vw, 3rem);
+  }
+
+  .hero-text {
+    font-size: 1rem;
+  }
+
+  .nav-panel {
+    top: 8px;
+    padding: 14px 16px;
+  }
+
+  .section-nav {
+    width: 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+
+  .nav-chip {
+    flex: 0 0 auto;
+  }
+
   .player-topline {
     flex-direction: column;
   }
@@ -1118,6 +1268,19 @@
 
   .progress-track {
     width: 100%;
+  }
+
+  .quick-facts,
+  .hero-mini-strip,
+  .recording-bar,
+  .listening-controls,
+  .action-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .overview-section-item {
+    align-items: flex-start;
   }
 }
 
