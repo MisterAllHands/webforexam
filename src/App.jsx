@@ -804,26 +804,28 @@ function App() {
 
   return (
     <div className={`app-shell section-${currentSection}`}>
-      <header className="hero-panel">
-        <div className="hero-copy hero-copy-full">
-          <p className="eyebrow">Private English session designed only for Galina</p>
-          <h1>{examData.meta.examTitle}</h1>
-          <p className="hero-text">{examData.meta.subtitle}</p>
-          <p className="hero-support">
-            {examData.overview.intro}
-            <span>{examData.overview.introRu}</span>
-          </p>
-          <div className="hero-mini-strip">
-            <span>{examData.meta.estimatedMinutes} min</span>
-            <span>4 skills</span>
-            <span>Headphones + mic</span>
+      {currentSection === 'overview' && (
+        <header className="hero-panel">
+          <div className="hero-copy hero-copy-full">
+            <p className="eyebrow">Private English session designed only for Galina</p>
+            <h1>{examData.meta.examTitle}</h1>
+            <p className="hero-text">{examData.meta.subtitle}</p>
+            <p className="hero-support">
+              {examData.overview.intro}
+              <span>{examData.overview.introRu}</span>
+            </p>
+            <div className="hero-mini-strip">
+              <span>{examData.meta.estimatedMinutes} min</span>
+              <span>4 skills</span>
+              <span>Headphones + mic</span>
+            </div>
           </div>
-        </div>
-      </header>
+        </header>
+      )}
 
       <section className="surface nav-panel">
         <div className="progress-copy">
-          <p className="mini-label">Progress</p>
+          <p className="mini-label">Galina's exam</p>
           <strong>{progressPercent}% complete</strong>
           <span>{completedSkills} of 4 sections done</span>
           <div className="progress-track" aria-hidden="true">
@@ -832,7 +834,15 @@ function App() {
         </div>
         <nav className="section-nav" aria-label="Exam sections">
           {EXAM_SECTIONS.map((sectionId) => {
-            const label = sectionId === 'overview' ? 'Overview' : sectionId[0].toUpperCase() + sectionId.slice(1)
+            const navLabels = {
+              overview: 'Start',
+              reading: 'Read',
+              listening: 'Listen',
+              writing: 'Write',
+              speaking: 'Speak',
+              results: 'Finish',
+            }
+            const label = navLabels[sectionId]
             const isActive = currentSection === sectionId
             const isSkill = ['reading', 'listening', 'writing', 'speaking'].includes(sectionId)
             const isComplete = isSkill ? completion[sectionId] : false
@@ -1280,16 +1290,22 @@ function App() {
             <button className="primary-button" type="button" onClick={exportSubmission}>
               Download submission file
             </button>
-            <button className="ghost-button" type="button" onClick={printCertificate}>
-              Print certificate
-            </button>
-            <button className="ghost-button" type="button" onClick={() => setTeacherMode((current) => !current)}>
-              {teacherMode ? 'Hide reviewer tools' : 'Open reviewer tools'}
-            </button>
             <button className="ghost-button" type="button" onClick={previousSection}>
               Back to speaking
             </button>
           </div>
+
+          <details className="results-details reviewer-details">
+            <summary>Teacher tools</summary>
+            <div className="action-row reviewer-actions">
+              <button className="ghost-button" type="button" onClick={printCertificate}>
+                Print certificate
+              </button>
+              <button className="ghost-button" type="button" onClick={() => setTeacherMode((current) => !current)}>
+                {teacherMode ? 'Hide reviewer tools' : 'Open reviewer tools'}
+              </button>
+            </div>
+          </details>
 
           {teacherMode && (
             <div className="action-row reviewer-actions">

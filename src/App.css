@@ -1021,6 +1021,15 @@
   padding: 0 18px 18px;
 }
 
+.reviewer-details {
+  background: rgba(255, 251, 246, 0.62);
+}
+
+.reviewer-details .reviewer-actions {
+  margin: 0;
+  padding: 0 18px 18px;
+}
+
 .teacher-textarea {
   margin-top: 16px;
 }
@@ -1242,6 +1251,10 @@
     padding: 14px 16px;
   }
 
+  .progress-copy span {
+    display: none;
+  }
+
   .section-nav {
     width: 100%;
     flex-wrap: nowrap;
@@ -1281,6 +1294,19 @@
 
   .overview-section-item {
     align-items: flex-start;
+  }
+
+  .section-panel > .action-row {
+    position: sticky;
+    bottom: 10px;
+    z-index: 16;
+    margin-inline: -8px;
+    padding: 10px;
+    border: 1px solid rgba(92, 31, 34, 0.12);
+    border-radius: 20px;
+    backdrop-filter: blur(18px);
+    background: rgba(255, 248, 240, 0.9);
+    box-shadow: 0 18px 34px rgba(70, 45, 34, 0.14);
   }
 }
 
