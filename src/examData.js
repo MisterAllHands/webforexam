@@ -7,7 +7,7 @@ export const examData = {
     supportLanguage: 'English with light Russian support',
     focusUnits: 'Essential Grammar in Use Elementary (2015), Units 1-45',
     focusAreas: ['Past simple', 'Present perfect', 'Passive voice', 'Question forms'],
-    estimatedMinutes: 90,
+    estimatedMinutes: 180,
     passPercentage: 70,
     certificateTitle: 'Certificate of Completion',
     certificateSubtitle:
@@ -29,6 +29,7 @@ export const examData = {
     rules: [
       'Complete the exam in a quiet room and use headphones for listening.',
       'Do not open the grammar book during the test.',
+      'The exam timer is three hours and starts after pressing Start exam.',
       'Each listening track can be played only three times.',
       'Finish the writing tasks before you record speaking.',
       'At the end, download the submission file and send it to Ramazan the same day.',

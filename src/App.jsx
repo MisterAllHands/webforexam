@@ -3,6 +3,7 @@ import './App.css'
 import { examData } from './examData'
 
 const STORAGE_KEY = 'galina-exam-template-v1'
+const EXAM_DURATION_SECONDS = 3 * 60 * 60
 const EXAM_SECTIONS = ['overview', 'reading', 'listening', 'writing', 'speaking', 'results']
 const SKILL_SECTION_MAP = {
   reading: examData.reading,
@@ -64,6 +65,7 @@ function createInitialState() {
 
   return {
     startedAt: '',
+    lockedAt: '',
     lastUpdatedAt: '',
     answers,
     writing,
@@ -328,6 +330,19 @@ function formatDuration(seconds) {
   return `${minutes}:${String(remainder).padStart(2, '0')}`
 }
 
+function formatCountdown(seconds) {
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    return '00:00:00'
+  }
+
+  const wholeSeconds = Math.floor(seconds)
+  const hours = Math.floor(wholeSeconds / 3600)
+  const minutes = Math.floor((wholeSeconds % 3600) / 60)
+  const remainder = wholeSeconds % 60
+
+  return [hours, minutes, remainder].map((item) => String(item).padStart(2, '0')).join(':')
+}
+
 function createDownload(filename, content, type) {
   const url = URL.createObjectURL(new Blob([content], { type }))
   const link = document.createElement('a')
@@ -340,6 +355,7 @@ function createDownload(filename, content, type) {
 function App() {
   const [examState, setExamState] = useState(() => loadSavedState())
   const [currentSection, setCurrentSection] = useState('overview')
+  const [now, setNow] = useState(() => Date.now())
   const [playCounts, setPlayCounts] = useState({})
   const [audioState, setAudioState] = useState(() => createInitialAudioState())
   const [activeListeningId, setActiveListeningId] = useState('')
@@ -354,6 +370,12 @@ function App() {
   const mediaChunksRef = useRef([])
   const mediaStreamRef = useRef(null)
   const recordingStartedAtRef = useRef(0)
+  const hasStarted = isFilled(examState.startedAt)
+  const startedAtMs = hasStarted ? Date.parse(examState.startedAt) : 0
+  const deadlineMs = startedAtMs + EXAM_DURATION_SECONDS * 1000
+  const remainingSeconds = hasStarted ? Math.max(0, Math.ceil((deadlineMs - now) / 1000)) : EXAM_DURATION_SECONDS
+  const timerExpired = hasStarted && remainingSeconds <= 0
+  const isExamLocked = isFilled(examState.lockedAt) || timerExpired
 
   const { reading: readingQuestions, listening: listeningQuestions } = getAllObjectiveQuestions()
   const objectiveQuestions = [...readingQuestions, ...listeningQuestions]
@@ -387,7 +409,7 @@ function App() {
   const speakingCompletedCount = examData.speaking.parts.filter(
     (part) => examState.speaking[part.id] && examState.speaking[part.id].recording,
   ).length
-  const readinessLabel = finalReviewReady ? getReadinessLabel(totalScore, totalPercent) : 'Awaiting reviewer marks'
+  const readinessLabel = isExamLocked && !finalReviewReady ? 'Time over' : finalReviewReady ? getReadinessLabel(totalScore, totalPercent) : 'Awaiting reviewer marks'
   const allSectionsFinished = Object.values(completion).every(Boolean)
   const topRevisionPriority = revisionPriorities[0]?.tag || 'No urgent priority detected'
   const topStrength = strongestAreas[0]?.tag || 'Balanced objective profile'
@@ -397,7 +419,10 @@ function App() {
     ? finalReviewReady
       ? `${examData.meta.studentName} has completed the full private session. The current strongest objective area is ${topStrength.toLowerCase()}, while the clearest next focus is ${topRevisionPriority.toLowerCase()}.`
       : `${examData.meta.studentName} has completed the full private session. Reading and listening are locked in, and writing plus speaking are waiting for reviewer marks.`
+    : isExamLocked
+      ? `Time is over. ${examData.meta.studentName}'s current answers have been locked and should be sent to Ramazan.`
     : `${examData.meta.studentName}'s session is still in progress. Finish all four skills to lock the full readiness picture and certificate.`
+  const visibleNavSections = isExamLocked ? ['results'] : EXAM_SECTIONS.filter((sectionId) => sectionId !== 'overview')
 
   useEffect(() => {
     window.localStorage.setItem(
@@ -408,6 +433,24 @@ function App() {
       }),
     )
   }, [examState])
+
+  useEffect(() => {
+    if (!hasStarted || isExamLocked) {
+      return undefined
+    }
+
+    const timerId = window.setInterval(() => {
+      setNow(Date.now())
+    }, 1000)
+
+    return () => window.clearInterval(timerId)
+  }, [hasStarted, isExamLocked])
+
+  useEffect(() => {
+    if (hasStarted && currentSection === 'overview') {
+      setCurrentSection(isExamLocked ? 'results' : 'reading')
+    }
+  }, [currentSection, hasStarted, isExamLocked])
 
   useEffect(() => {
     const metadataPlayers = examData.listening.sections.map((section) => {
@@ -441,7 +484,48 @@ function App() {
     }
   }, [])
 
+  useEffect(() => {
+    if (!timerExpired || examState.lockedAt) {
+      return
+    }
+
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current.currentTime = 0
+      audioRef.current.src = ''
+      audioRef.current = null
+    }
+
+    if (activeListeningId) {
+      setAudioState((current) => ({
+        ...current,
+        [activeListeningId]: {
+          ...current[activeListeningId],
+          currentTime: 0,
+          isPlaying: false,
+          hasFinished: false,
+        },
+      }))
+    }
+
+    setActiveListeningId('')
+
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop()
+    }
+
+    setExamState((current) => ({
+      ...current,
+      lockedAt: current.lockedAt || new Date().toISOString(),
+    }))
+    setCurrentSection('results')
+  }, [activeListeningId, timerExpired, examState.lockedAt])
+
   const updateAnswer = (questionId, value) => {
+    if (isExamLocked) {
+      return
+    }
+
     setExamState((current) => ({
       ...current,
       answers: {
@@ -452,6 +536,10 @@ function App() {
   }
 
   const updateWriting = (taskId, value) => {
+    if (isExamLocked) {
+      return
+    }
+
     setExamState((current) => ({
       ...current,
       writing: {
@@ -489,6 +577,14 @@ function App() {
   }
 
   const goToSection = (sectionId) => {
+    if (!hasStarted && sectionId !== 'overview') {
+      return
+    }
+
+    if (isExamLocked && sectionId !== 'results') {
+      return
+    }
+
     if (currentSection === 'listening' && sectionId !== 'listening') {
       stopListeningPlayback()
     }
@@ -497,11 +593,18 @@ function App() {
   }
 
   const startExam = () => {
+    if (isExamLocked) {
+      return
+    }
+
+    const startedAt = new Date().toISOString()
+    setNow(Date.now())
     setExamState((current) => ({
       ...current,
-      startedAt: current.startedAt || new Date().toISOString(),
+      startedAt: current.startedAt || startedAt,
+      lockedAt: '',
     }))
-    goToSection('reading')
+    setCurrentSection('reading')
   }
 
   const stopListeningPlayback = () => {
@@ -528,6 +631,11 @@ function App() {
   }
 
   const playListeningSection = (section) => {
+    if (isExamLocked) {
+      setListeningError('Time is over. The exam is locked.')
+      return
+    }
+
     if ((playCounts[section.id] || 0) >= section.maxPlays) {
       setListeningError('Maximum playback count reached for this audio.')
       return
@@ -623,6 +731,11 @@ function App() {
   }
 
   const startRecording = async (partId) => {
+    if (isExamLocked) {
+      setRecordingError('Time is over. The exam is locked.')
+      return
+    }
+
     if (activeRecordingId) {
       setRecordingError('Finish the current recording before starting another one.')
       return
@@ -696,6 +809,10 @@ function App() {
   }
 
   const deleteRecording = (partId) => {
+    if (isExamLocked) {
+      return
+    }
+
     setExamState((current) => ({
       ...current,
       speaking: {
@@ -713,6 +830,13 @@ function App() {
       exportedAt: new Date().toISOString(),
       meta: examData.meta,
       state: examState,
+      timing: {
+        durationSeconds: EXAM_DURATION_SECONDS,
+        startedAt: examState.startedAt,
+        lockedAt: examState.lockedAt,
+        exportedAfterLock: isExamLocked,
+        remainingSeconds,
+      },
       results: {
         readingScore,
         listeningScore,
@@ -757,31 +881,6 @@ function App() {
     }
   }
 
-  const resetExam = () => {
-    stopListeningPlayback()
-    if (activeRecordingId) {
-      stopRecording()
-    }
-    window.localStorage.removeItem(STORAGE_KEY)
-    setExamState(createInitialState())
-    setPlayCounts({})
-    setAudioState((current) =>
-      Object.fromEntries(
-        Object.entries(current).map(([sectionId, state]) => [
-          sectionId,
-          {
-            ...state,
-            currentTime: 0,
-            isPlaying: false,
-            hasFinished: false,
-          },
-        ]),
-      ),
-    )
-    setCurrentSection('overview')
-    setTeacherMode(false)
-  }
-
   const printCertificate = () => {
     window.print()
   }
@@ -823,43 +922,50 @@ function App() {
         </header>
       )}
 
-      <section className="surface nav-panel">
-        <div className="progress-copy">
-          <p className="mini-label">Galina's exam</p>
-          <strong>{progressPercent}% complete</strong>
-          <span>{completedSkills} of 4 sections done</span>
-          <div className="progress-track" aria-hidden="true">
-            <div className="progress-fill" style={{ width: `${progressPercent}%` }} />
+      {hasStarted && (
+        <section className={`surface nav-panel ${isExamLocked ? 'is-locked' : ''}`}>
+          <div className="progress-copy">
+            <p className="mini-label">Galina's exam</p>
+            <strong>{progressPercent}% complete</strong>
+            <span>{completedSkills} of 4 sections done</span>
+            <div className="progress-track" aria-hidden="true">
+              <div className="progress-fill" style={{ width: `${progressPercent}%` }} />
+            </div>
           </div>
-        </div>
-        <nav className="section-nav" aria-label="Exam sections">
-          {EXAM_SECTIONS.map((sectionId) => {
-            const navLabels = {
-              overview: 'Start',
-              reading: 'Read',
-              listening: 'Listen',
-              writing: 'Write',
-              speaking: 'Speak',
-              results: 'Finish',
-            }
-            const label = navLabels[sectionId]
-            const isActive = currentSection === sectionId
-            const isSkill = ['reading', 'listening', 'writing', 'speaking'].includes(sectionId)
-            const isComplete = isSkill ? completion[sectionId] : false
 
-            return (
-              <button
-                key={sectionId}
-                className={`nav-chip ${isActive ? 'active' : ''} ${isComplete ? 'complete' : ''}`}
-                onClick={() => goToSection(sectionId)}
-                type="button"
-              >
-                {label}
-              </button>
-            )
-          })}
-        </nav>
-      </section>
+          <div className={`timer-pill ${remainingSeconds <= 600 && !isExamLocked ? 'urgent' : ''} ${isExamLocked ? 'locked' : ''}`}>
+            <span>{isExamLocked ? 'Time over' : 'Time left'}</span>
+            <strong>{isExamLocked ? 'Locked' : formatCountdown(remainingSeconds)}</strong>
+          </div>
+
+          <nav className="section-nav" aria-label="Exam sections">
+            {visibleNavSections.map((sectionId) => {
+              const navLabels = {
+                reading: 'Read',
+                listening: 'Listen',
+                writing: 'Write',
+                speaking: 'Speak',
+                results: 'Finish',
+              }
+              const label = navLabels[sectionId]
+              const isActive = currentSection === sectionId
+              const isSkill = ['reading', 'listening', 'writing', 'speaking'].includes(sectionId)
+              const isComplete = isSkill ? completion[sectionId] : false
+
+              return (
+                <button
+                  key={sectionId}
+                  className={`nav-chip ${isActive ? 'active' : ''} ${isComplete ? 'complete' : ''}`}
+                  onClick={() => goToSection(sectionId)}
+                  type="button"
+                >
+                  {label}
+                </button>
+              )
+            })}
+          </nav>
+        </section>
+      )}
 
       {currentSection === 'overview' && (
         <section className="surface section-panel">
@@ -883,17 +989,14 @@ function App() {
               <p className="support-note">{examData.overview.missionRu}</p>
 
               <div className="quick-facts">
-                <span>{examData.meta.estimatedMinutes} minutes</span>
-                <span>One sitting</span>
-                <span>Download at the end</span>
+                <span>3-hour timer</span>
+                <span>One sitting only</span>
+                <span>Timer starts after this button</span>
               </div>
 
               <div className="action-row">
                 <button className="primary-button" type="button" onClick={startExam}>
-                  {examState.startedAt ? 'Continue exam' : 'Start exam'}
-                </button>
-                <button className="ghost-button" type="button" onClick={resetExam}>
-                  Reset session
+                  Start the exam
                 </button>
               </div>
 
@@ -910,20 +1013,6 @@ function App() {
                   <li key={rule}>{rule}</li>
                 ))}
               </ul>
-            </article>
-
-            <article className="content-card overview-card">
-              <h3>Today</h3>
-              <div className="overview-sections">
-                {examData.overview.sections.map((section) => (
-                  <div key={section.id} className="overview-section-item">
-                    <strong>
-                      {section.title} / {section.titleRu}
-                    </strong>
-                    <span>{section.duration}</span>
-                  </div>
-                ))}
-              </div>
             </article>
           </div>
         </section>
@@ -963,6 +1052,7 @@ function App() {
                 {passage.questions.map((question, index) => (
                   <QuestionCard
                     key={question.id}
+                    disabled={isExamLocked}
                     index={index + 1}
                     question={question}
                     value={examState.answers[question.id]}
@@ -976,9 +1066,6 @@ function App() {
           <div className="action-row">
             <button className="primary-button" type="button" onClick={nextSection}>
               Continue to listening
-            </button>
-            <button className="ghost-button" type="button" onClick={goToSection.bind(null, 'overview')}>
-              Back to overview
             </button>
           </div>
         </section>
@@ -1017,6 +1104,7 @@ function App() {
               <ListeningPlayer
                 activeListeningId={activeListeningId}
                 audioState={audioState[section.id]}
+                disabled={isExamLocked}
                 onPlay={() => playListeningSection(section)}
                 playCount={playCounts[section.id] || 0}
                 section={section}
@@ -1027,6 +1115,7 @@ function App() {
                 {section.questions.map((question, index) => (
                   <QuestionCard
                     key={question.id}
+                    disabled={isExamLocked}
                     index={index + 1}
                     question={question}
                     value={examState.answers[question.id]}
@@ -1083,6 +1172,7 @@ function App() {
                 <p className="hint-line">Include: {task.supportPoints.join(' • ')}</p>
                 <textarea
                   className="essay-field"
+                  disabled={isExamLocked}
                   value={value}
                   onChange={(event) => updateWriting(task.id, event.target.value)}
                   placeholder="Write your answer here..."
@@ -1140,7 +1230,7 @@ function App() {
                       Stop recording
                     </button>
                   ) : (
-                    <button className="primary-button" type="button" onClick={() => startRecording(part.id)}>
+                    <button className="primary-button" type="button" disabled={isExamLocked} onClick={() => startRecording(part.id)}>
                       {recording ? 'Record again' : 'Start recording'}
                     </button>
                   )}
@@ -1148,7 +1238,7 @@ function App() {
                   {recording && (
                     <>
                       <span className="recording-tag">{recording.durationLabel}</span>
-                      <button className="ghost-button" type="button" onClick={() => deleteRecording(part.id)}>
+                      <button className="ghost-button" type="button" disabled={isExamLocked} onClick={() => deleteRecording(part.id)}>
                         Delete
                       </button>
                     </>
@@ -1177,6 +1267,14 @@ function App() {
 
       {currentSection === 'results' && (
         <section className="surface section-panel">
+          {isExamLocked && (
+            <div className="lock-banner">
+              <span>Time is over</span>
+              <strong>The exam is locked.</strong>
+              <p>No more answers can be changed. Download the submission file and send it to Ramazan.</p>
+            </div>
+          )}
+
           <div className="section-heading">
             <div>
               <p className="mini-label">Results</p>
@@ -1290,9 +1388,11 @@ function App() {
             <button className="primary-button" type="button" onClick={exportSubmission}>
               Download submission file
             </button>
-            <button className="ghost-button" type="button" onClick={previousSection}>
-              Back to speaking
-            </button>
+            {!isExamLocked && (
+              <button className="ghost-button" type="button" onClick={previousSection}>
+                Back to speaking
+              </button>
+            )}
           </div>
 
           <details className="results-details reviewer-details">
@@ -1414,9 +1514,9 @@ function App() {
   )
 }
 
-function QuestionCard({ index, question, value, onChange }) {
+function QuestionCard({ disabled = false, index, question, value, onChange }) {
   return (
-    <div className={`question-card ${isFilled(value) ? 'answered' : ''}`} style={{ '--card-delay': `${(index - 1) * 55}ms` }}>
+    <div className={`question-card ${isFilled(value) ? 'answered' : ''} ${disabled ? 'locked' : ''}`} style={{ '--card-delay': `${(index - 1) * 55}ms` }}>
       <div className="question-meta">
         <span>
           Q{index} · {question.points} pts
@@ -1430,6 +1530,7 @@ function QuestionCard({ index, question, value, onChange }) {
             <label key={option} className={`option-chip ${value === option ? 'selected' : ''}`}>
               <input
                 checked={value === option}
+                disabled={disabled}
                 name={question.id}
                 onChange={() => onChange(question.id, option)}
                 type="radio"
@@ -1446,6 +1547,7 @@ function QuestionCard({ index, question, value, onChange }) {
             <label key={option} className={`option-chip ${value === option ? 'selected' : ''}`}>
               <input
                 checked={value === option}
+                disabled={disabled}
                 name={question.id}
                 onChange={() => onChange(question.id, option)}
                 type="radio"
@@ -1459,6 +1561,7 @@ function QuestionCard({ index, question, value, onChange }) {
       {question.type === 'shortText' && (
         <input
           className="short-answer"
+          disabled={disabled}
           onChange={(event) => onChange(question.id, event.target.value)}
           placeholder="Write a short answer..."
           type="text"
@@ -1469,17 +1572,19 @@ function QuestionCard({ index, question, value, onChange }) {
   )
 }
 
-function ListeningPlayer({ activeListeningId, audioState, onPlay, playCount, section, sectionIndex }) {
+function ListeningPlayer({ activeListeningId, audioState, disabled = false, onPlay, playCount, section, sectionIndex }) {
   const isPlaying = activeListeningId === section.id && audioState.isPlaying
   const remainingTime = Math.max(0, (audioState.duration || 0) - (audioState.currentTime || 0))
   const progressPercent =
     audioState.duration > 0 ? Math.min(100, (audioState.currentTime / audioState.duration) * 100) : 0
-  const isDisabled = isPlaying || playCount >= section.maxPlays
+  const isDisabled = disabled || isPlaying || playCount >= section.maxPlays
 
   let buttonLabel = `Play track ${sectionIndex + 1}`
 
   if (isPlaying) {
     buttonLabel = 'Playing now'
+  } else if (disabled) {
+    buttonLabel = 'Exam locked'
   } else if (playCount > 0 && playCount < section.maxPlays) {
     buttonLabel = `Replay track ${sectionIndex + 1}`
   } else if (playCount >= section.maxPlays) {
@@ -1510,7 +1615,7 @@ function ListeningPlayer({ activeListeningId, audioState, onPlay, playCount, sec
           {buttonLabel}
         </button>
         <p className="player-caption">
-          No pause. No speed change. Start only when ready.
+          {disabled ? 'Time is over. Listening is locked.' : 'No pause. No speed change. Start only when ready.'}
         </p>
       </div>
     </div>

@@ -206,7 +206,7 @@
 
 .overview-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.35fr) repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.85fr);
   gap: 18px;
 }
 
@@ -221,6 +221,10 @@
   margin-top: 20px;
   padding: 18px 22px;
   background: rgba(255, 248, 241, 0.88);
+}
+
+.nav-panel.is-locked {
+  border-color: rgba(143, 47, 63, 0.24);
 }
 
 .progress-copy {
@@ -244,6 +248,38 @@
   overflow: hidden;
   border-radius: 999px;
   background: rgba(92, 31, 34, 0.1);
+}
+
+.timer-pill {
+  display: grid;
+  gap: 4px;
+  min-width: 132px;
+  padding: 12px 16px;
+  border: 1px solid rgba(92, 31, 34, 0.14);
+  border-radius: 18px;
+  background: rgba(255, 251, 246, 0.92);
+  text-align: center;
+}
+
+.timer-pill span {
+  color: var(--text-soft);
+  font-size: 0.74rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.timer-pill strong {
+  color: var(--accent);
+  font-size: 1.15rem;
+}
+
+.timer-pill.urgent {
+  border-color: rgba(143, 47, 63, 0.28);
+  background: rgba(143, 47, 63, 0.07);
+}
+
+.timer-pill.locked strong {
+  color: var(--danger);
 }
 
 .progress-fill {
@@ -728,6 +764,14 @@
   transform: translateX(120%);
 }
 
+.primary-button:disabled,
+.ghost-button:disabled,
+.file-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+}
+
 .primary-button.is-active,
 .primary-button.is-recording {
   animation: softPulse 1.6s ease-in-out infinite;
@@ -795,6 +839,10 @@
 .question-card.answered {
   background: rgba(255, 251, 246, 0.98);
   border-color: rgba(197, 154, 74, 0.28);
+}
+
+.question-card.locked {
+  opacity: 0.82;
 }
 
 .question-meta {
@@ -948,6 +996,33 @@
   margin-top: 12px;
   color: var(--danger);
   font-weight: 700;
+}
+
+.lock-banner {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 18px;
+  padding: 18px;
+  border: 1px solid rgba(143, 47, 63, 0.24);
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(143, 47, 63, 0.1), rgba(255, 247, 239, 0.96));
+}
+
+.lock-banner span {
+  color: var(--danger);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.lock-banner strong {
+  color: var(--accent-3);
+  font-size: 1.35rem;
+}
+
+.lock-banner p {
+  color: var(--text-soft);
 }
 
 .result-card {
@@ -1253,6 +1328,11 @@
 
   .progress-copy span {
     display: none;
+  }
+
+  .timer-pill {
+    width: 100%;
+    text-align: left;
   }
 
   .section-nav {
