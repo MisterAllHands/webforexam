@@ -376,6 +376,8 @@ function App() {
   const remainingSeconds = hasStarted ? Math.max(0, Math.ceil((deadlineMs - now) / 1000)) : EXAM_DURATION_SECONDS
   const timerExpired = hasStarted && remainingSeconds <= 0
   const isExamLocked = isFilled(examState.lockedAt) || timerExpired
+  const hasActiveAttempt = hasStarted && !isExamLocked
+  const hasLockedAttempt = hasStarted && isExamLocked
 
   const { reading: readingQuestions, listening: listeningQuestions } = getAllObjectiveQuestions()
   const objectiveQuestions = [...readingQuestions, ...listeningQuestions]
@@ -422,7 +424,7 @@ function App() {
     : isExamLocked
       ? `Time is over. ${examData.meta.studentName}'s current answers have been locked and should be sent to Ramazan.`
     : `${examData.meta.studentName}'s session is still in progress. Finish all four skills to lock the full readiness picture and certificate.`
-  const visibleNavSections = isExamLocked ? ['results'] : EXAM_SECTIONS.filter((sectionId) => sectionId !== 'overview')
+  const visibleNavSections = ['reading', 'listening', 'writing', 'speaking', 'results']
 
   useEffect(() => {
     window.localStorage.setItem(
@@ -447,10 +449,10 @@ function App() {
   }, [hasStarted, isExamLocked])
 
   useEffect(() => {
-    if (hasStarted && currentSection === 'overview') {
-      setCurrentSection(isExamLocked ? 'results' : 'reading')
+    if (hasActiveAttempt && currentSection === 'overview') {
+      setCurrentSection('reading')
     }
-  }, [currentSection, hasStarted, isExamLocked])
+  }, [currentSection, hasActiveAttempt])
 
   useEffect(() => {
     const metadataPlayers = examData.listening.sections.map((section) => {
@@ -594,16 +596,21 @@ function App() {
 
   const startExam = () => {
     if (isExamLocked) {
-      return
+      window.localStorage.removeItem(STORAGE_KEY)
     }
 
     const startedAt = new Date().toISOString()
     setNow(Date.now())
-    setExamState((current) => ({
-      ...current,
-      startedAt: current.startedAt || startedAt,
+    setExamState({
+      ...createInitialState(),
+      startedAt,
       lockedAt: '',
-    }))
+    })
+    setPlayCounts({})
+    setAudioState(createInitialAudioState())
+    setListeningError('')
+    setRecordingError('')
+    setTeacherMode(false)
     setCurrentSection('reading')
   }
 
@@ -922,7 +929,7 @@ function App() {
         </header>
       )}
 
-      {hasStarted && (
+      {hasActiveAttempt && (
         <section className={`surface nav-panel ${isExamLocked ? 'is-locked' : ''}`}>
           <div className="progress-copy">
             <p className="mini-label">Galina's exam</p>
@@ -987,6 +994,11 @@ function App() {
                 Find a quiet place, use headphones, and finish the full session in one sitting.
               </p>
               <p className="support-note">{examData.overview.missionRu}</p>
+              {hasLockedAttempt && (
+                <p className="support-note">
+                  A previous attempt on this device has ended. Press Start to begin a new exam.
+                </p>
+              )}
 
               <div className="quick-facts">
                 <span>3-hour timer</span>
