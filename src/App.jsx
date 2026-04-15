@@ -1,15 +1,67 @@
 import { useEffect, useId, useRef, useState } from 'react'
+import {
+  AlertCircle,
+  AlertTriangle,
+  Award,
+  BookOpen,
+  CheckCircle,
+  CheckCircle2,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+  Circle,
+  Clock,
+  Download,
+  Headphones,
+  Lightbulb,
+  Mic,
+  PenLine,
+  Play,
+  Printer,
+  Send,
+  ShieldCheck,
+  Square,
+  Star,
+  Target,
+  Trash2,
+  X,
+} from 'lucide-react'
 import './App.css'
 import { examData } from './examData'
 
 const STORAGE_KEY = 'galina-exam-template-v1'
 const EXAM_DURATION_SECONDS = 3 * 60 * 60
-const EXAM_SECTIONS = ['overview', 'reading', 'listening', 'writing', 'speaking', 'results']
-const SKILL_SECTION_MAP = {
-  reading: examData.reading,
-  listening: examData.listening,
-  writing: examData.writing,
-  speaking: examData.speaking,
+const SECTION_ORDER = ['reading', 'listening', 'writing', 'speaking']
+const SECTION_THEMES = {
+  reading: {
+    icon: BookOpen,
+    accent: '#7a2535',
+    soft: 'rgba(122, 37, 53, 0.08)',
+    border: 'rgba(122, 37, 53, 0.18)',
+    glow: 'rgba(122, 37, 53, 0.24)',
+  },
+  listening: {
+    icon: Headphones,
+    accent: '#2d5a7a',
+    soft: 'rgba(45, 90, 122, 0.08)',
+    border: 'rgba(45, 90, 122, 0.18)',
+    glow: 'rgba(45, 90, 122, 0.24)',
+  },
+  writing: {
+    icon: PenLine,
+    accent: '#2d6b4a',
+    soft: 'rgba(45, 107, 74, 0.08)',
+    border: 'rgba(45, 107, 74, 0.18)',
+    glow: 'rgba(45, 107, 74, 0.24)',
+  },
+  speaking: {
+    icon: Mic,
+    accent: '#6b2d7a',
+    soft: 'rgba(107, 45, 122, 0.08)',
+    border: 'rgba(107, 45, 122, 0.18)',
+    glow: 'rgba(107, 45, 122, 0.24)',
+  },
 }
 
 function createInitialAudioState() {
@@ -66,6 +118,7 @@ function createInitialState() {
   return {
     startedAt: '',
     lockedAt: '',
+    lockedReason: '',
     lastUpdatedAt: '',
     answers,
     writing,
@@ -196,7 +249,9 @@ function getStorageSafeState(state) {
             name: partState.recording.name,
             mimeType: partState.recording.mimeType,
             durationLabel: partState.recording.durationLabel,
-            saved: true,
+            dataUrl: partState.recording.dataUrl || null,
+            playbackUrl: partState.recording.playbackUrl || null,
+            storagePath: partState.recording.storagePath || null,
           }
         : null,
     }
@@ -210,7 +265,7 @@ function getStorageSafeState(state) {
 
 function mergeImportedState(rawState) {
   const base = createInitialState()
-  const nextState = {
+  return {
     ...base,
     ...rawState,
     answers: {
@@ -238,8 +293,6 @@ function mergeImportedState(rawState) {
       },
     },
   }
-
-  return nextState
 }
 
 function loadSavedState() {
@@ -287,21 +340,6 @@ function getReadinessLabel(score, percent) {
     return 'Needs targeted revision'
   }
   return 'Needs a full review cycle'
-}
-
-function getSectionVerdict(earned, possible) {
-  const percent = possible === 0 ? 0 : Math.round((earned / possible) * 100)
-
-  if (percent >= 85) {
-    return 'Secure'
-  }
-  if (percent >= 70) {
-    return 'Working well'
-  }
-  if (percent >= 55) {
-    return 'Developing'
-  }
-  return 'Needs revision'
 }
 
 function formatTimestamp(value) {
@@ -352,9 +390,19 @@ function createDownload(filename, content, type) {
   URL.revokeObjectURL(url)
 }
 
+function getRecordingSource(recording) {
+  if (!recording) {
+    return ''
+  }
+
+  return recording.playbackUrl || recording.dataUrl || ''
+}
+
 function App() {
   const [examState, setExamState] = useState(() => loadSavedState())
   const [currentSection, setCurrentSection] = useState('overview')
+  const [introView, setIntroView] = useState('landing')
+  const [overviewChecks, setOverviewChecks] = useState({})
   const [now, setNow] = useState(() => Date.now())
   const [playCounts, setPlayCounts] = useState({})
   const [audioState, setAudioState] = useState(() => createInitialAudioState())
@@ -362,7 +410,11 @@ function App() {
   const [listeningError, setListeningError] = useState('')
   const [recordingError, setRecordingError] = useState('')
   const [activeRecordingId, setActiveRecordingId] = useState('')
-  const [teacherMode, setTeacherMode] = useState(false)
+  const [recordingElapsedSeconds, setRecordingElapsedSeconds] = useState(0)
+  const [showSubmitPrompt, setShowSubmitPrompt] = useState(false)
+  const [teacherToolsOpen, setTeacherToolsOpen] = useState(() =>
+    typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('review') === '1',
+  )
   const importInputId = useId()
 
   const audioRef = useRef(null)
@@ -370,6 +422,8 @@ function App() {
   const mediaChunksRef = useRef([])
   const mediaStreamRef = useRef(null)
   const recordingStartedAtRef = useRef(0)
+  const reviewRequested =
+    typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('review') === '1'
   const hasStarted = isFilled(examState.startedAt)
   const startedAtMs = hasStarted ? Date.parse(examState.startedAt) : 0
   const deadlineMs = startedAtMs + EXAM_DURATION_SECONDS * 1000
@@ -378,11 +432,16 @@ function App() {
   const isExamLocked = isFilled(examState.lockedAt) || timerExpired
   const hasActiveAttempt = hasStarted && !isExamLocked
   const hasLockedAttempt = hasStarted && isExamLocked
+  const allChecklistReady = examData.overview.preflightChecklist.every((_, index) => overviewChecks[index])
+  const totalSectionPoints = examData.overview.sections.reduce((sum, section) => sum + section.points, 0)
 
   const { reading: readingQuestions, listening: listeningQuestions } = getAllObjectiveQuestions()
   const objectiveQuestions = [...readingQuestions, ...listeningQuestions]
   const readingScore = getObjectiveSectionScore(readingQuestions, examState.answers)
   const listeningScore = getObjectiveSectionScore(listeningQuestions, examState.answers)
+  const objectiveTotalScore = readingScore.earned + listeningScore.earned
+  const objectiveMaxScore = readingScore.possible + listeningScore.possible
+  const objectivePercent = objectiveMaxScore === 0 ? 0 : Math.round((objectiveTotalScore / objectiveMaxScore) * 100)
   const focusAreaBreakdown = getFocusAreaBreakdown(objectiveQuestions, examState.answers)
   const revisionPriorities = focusAreaBreakdown.filter((item) => item.percent < examData.meta.passPercentage).slice(0, 4)
   const strongestAreas = [...focusAreaBreakdown].reverse().slice(0, 3)
@@ -397,8 +456,6 @@ function App() {
     examState.teacherReview.speakingComment,
   )
   const finalReviewReady = writingReviewed && speakingReviewed
-  const objectiveTotalScore = readingScore.earned + listeningScore.earned
-  const objectiveMaxScore = readingScore.possible + listeningScore.possible
   const reviewedTotalScore = objectiveTotalScore + writingTeacherScore + speakingTeacherScore
   const reviewedMaxScore = objectiveMaxScore + 20 + 20
   const totalScore = finalReviewReady ? reviewedTotalScore : objectiveTotalScore
@@ -406,25 +463,27 @@ function App() {
   const totalPercent = maxScore === 0 ? 0 : Math.round((totalScore / maxScore) * 100)
   const completion = getCompletionStatus(examState)
   const completedSkills = Object.values(completion).filter(Boolean).length
-  const progressPercent = Math.round((completedSkills / 4) * 100)
+  const skillProgressPercent = Math.round((completedSkills / 4) * 100)
   const writingCompletedCount = examData.writing.tasks.filter((task) => isFilled(examState.writing[task.id])).length
   const speakingCompletedCount = examData.speaking.parts.filter(
     (part) => examState.speaking[part.id] && examState.speaking[part.id].recording,
   ).length
-  const readinessLabel = isExamLocked && !finalReviewReady ? 'Time over' : finalReviewReady ? getReadinessLabel(totalScore, totalPercent) : 'Awaiting reviewer marks'
-  const allSectionsFinished = Object.values(completion).every(Boolean)
   const topRevisionPriority = revisionPriorities[0]?.tag || 'No urgent priority detected'
   const topStrength = strongestAreas[0]?.tag || 'Balanced objective profile'
-  const readingVerdict = getSectionVerdict(readingScore.earned, readingScore.possible)
-  const listeningVerdict = getSectionVerdict(listeningScore.earned, listeningScore.possible)
-  const studentSummary = allSectionsFinished
-    ? finalReviewReady
-      ? `${examData.meta.studentName} has completed the full private session. The current strongest objective area is ${topStrength.toLowerCase()}, while the clearest next focus is ${topRevisionPriority.toLowerCase()}.`
-      : `${examData.meta.studentName} has completed the full private session. Reading and listening are locked in, and writing plus speaking are waiting for reviewer marks.`
-    : isExamLocked
-      ? `Time is over. ${examData.meta.studentName}'s current answers have been locked and should be sent to Ramazan.`
-    : `${examData.meta.studentName}'s session is still in progress. Finish all four skills to lock the full readiness picture and certificate.`
-  const visibleNavSections = ['reading', 'listening', 'writing', 'speaking', 'results']
+  const readinessLabel =
+    isExamLocked && !finalReviewReady
+      ? examState.lockedReason === 'submitted'
+        ? 'Exam submitted'
+        : 'Time over'
+      : finalReviewReady
+        ? getReadinessLabel(totalScore, totalPercent)
+        : 'Awaiting reviewer marks'
+  const studentSummary = finalReviewReady
+    ? `${examData.meta.studentName}'s full review is complete. The strongest objective area is ${topStrength.toLowerCase()}, and the clearest next revision focus is ${topRevisionPriority.toLowerCase()}.`
+    : `${examData.meta.studentName}'s reading and listening have been scored. Writing and speaking remain pending until Ramazan reviews them.`
+  const showPreExamFlow = currentSection === 'overview' && !hasActiveAttempt && !reviewRequested
+  const reviewMode = reviewRequested && teacherToolsOpen
+  const submittedEarly = isExamLocked && examState.lockedReason === 'submitted' && !timerExpired
 
   useEffect(() => {
     window.localStorage.setItem(
@@ -453,6 +512,12 @@ function App() {
       setCurrentSection('reading')
     }
   }, [currentSection, hasActiveAttempt])
+
+  useEffect(() => {
+    if (reviewRequested && currentSection === 'overview' && !hasActiveAttempt) {
+      setCurrentSection('results')
+    }
+  }, [currentSection, hasActiveAttempt, reviewRequested])
 
   useEffect(() => {
     const metadataPlayers = examData.listening.sections.map((section) => {
@@ -487,134 +552,23 @@ function App() {
   }, [])
 
   useEffect(() => {
+    if (!activeRecordingId) {
+      setRecordingElapsedSeconds(0)
+      return undefined
+    }
+
+    const timerId = window.setInterval(() => {
+      setRecordingElapsedSeconds(Math.max(1, Math.round((Date.now() - recordingStartedAtRef.current) / 1000)))
+    }, 1000)
+
+    return () => window.clearInterval(timerId)
+  }, [activeRecordingId])
+
+  useEffect(() => {
     if (!timerExpired || examState.lockedAt) {
       return
     }
 
-    if (audioRef.current) {
-      audioRef.current.pause()
-      audioRef.current.currentTime = 0
-      audioRef.current.src = ''
-      audioRef.current = null
-    }
-
-    if (activeListeningId) {
-      setAudioState((current) => ({
-        ...current,
-        [activeListeningId]: {
-          ...current[activeListeningId],
-          currentTime: 0,
-          isPlaying: false,
-          hasFinished: false,
-        },
-      }))
-    }
-
-    setActiveListeningId('')
-
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop()
-    }
-
-    setExamState((current) => ({
-      ...current,
-      lockedAt: current.lockedAt || new Date().toISOString(),
-    }))
-    setCurrentSection('results')
-  }, [activeListeningId, timerExpired, examState.lockedAt])
-
-  const updateAnswer = (questionId, value) => {
-    if (isExamLocked) {
-      return
-    }
-
-    setExamState((current) => ({
-      ...current,
-      answers: {
-        ...current.answers,
-        [questionId]: value,
-      },
-    }))
-  }
-
-  const updateWriting = (taskId, value) => {
-    if (isExamLocked) {
-      return
-    }
-
-    setExamState((current) => ({
-      ...current,
-      writing: {
-        ...current.writing,
-        [taskId]: value,
-      },
-    }))
-  }
-
-  const updateTeacherScore = (group, criterionId, value) => {
-    const scoreKey = group === 'writing' ? 'writingScores' : 'speakingScores'
-
-    setExamState((current) => ({
-      ...current,
-      teacherReview: {
-        ...current.teacherReview,
-        [scoreKey]: {
-          ...current.teacherReview[scoreKey],
-          [criterionId]: Number(value),
-        },
-        reviewedAt: new Date().toISOString(),
-      },
-    }))
-  }
-
-  const updateTeacherComment = (field, value) => {
-    setExamState((current) => ({
-      ...current,
-      teacherReview: {
-        ...current.teacherReview,
-        [field]: value,
-        reviewedAt: new Date().toISOString(),
-      },
-    }))
-  }
-
-  const goToSection = (sectionId) => {
-    if (!hasStarted && sectionId !== 'overview') {
-      return
-    }
-
-    if (isExamLocked && sectionId !== 'results') {
-      return
-    }
-
-    if (currentSection === 'listening' && sectionId !== 'listening') {
-      stopListeningPlayback()
-    }
-
-    setCurrentSection(sectionId)
-  }
-
-  const startExam = () => {
-    if (isExamLocked) {
-      window.localStorage.removeItem(STORAGE_KEY)
-    }
-
-    const startedAt = new Date().toISOString()
-    setNow(Date.now())
-    setExamState({
-      ...createInitialState(),
-      startedAt,
-      lockedAt: '',
-    })
-    setPlayCounts({})
-    setAudioState(createInitialAudioState())
-    setListeningError('')
-    setRecordingError('')
-    setTeacherMode(false)
-    setCurrentSection('reading')
-  }
-
-  const stopListeningPlayback = () => {
     if (audioRef.current) {
       const sectionId = activeListeningId
       audioRef.current.pause()
@@ -634,10 +588,158 @@ function App() {
         }))
       }
     }
+
+    setActiveListeningId('')
+    stopRecording()
+
+    setExamState((current) => ({
+      ...current,
+      lockedAt: current.lockedAt || new Date().toISOString(),
+      lockedReason: current.lockedReason || 'timeout',
+    }))
+    setCurrentSection('results')
+    setShowSubmitPrompt(false)
+  }, [timerExpired, examState.lockedAt, activeListeningId])
+
+  function stopListeningPlayback() {
+    if (audioRef.current) {
+      const sectionId = activeListeningId
+      audioRef.current.pause()
+      audioRef.current.currentTime = 0
+      audioRef.current.src = ''
+      audioRef.current = null
+
+      if (sectionId) {
+        setAudioState((current) => ({
+          ...current,
+          [sectionId]: {
+            ...current[sectionId],
+            currentTime: 0,
+            isPlaying: false,
+            hasFinished: false,
+          },
+        }))
+      }
+    }
+
     setActiveListeningId('')
   }
 
-  const playListeningSection = (section) => {
+  function stopRecording() {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop()
+    }
+  }
+
+  function lockExam(reason) {
+    stopListeningPlayback()
+    stopRecording()
+
+    setExamState((current) => ({
+      ...current,
+      lockedAt: current.lockedAt || new Date().toISOString(),
+      lockedReason: current.lockedReason || reason,
+    }))
+    setCurrentSection('results')
+    setShowSubmitPrompt(false)
+  }
+
+  function updateAnswer(questionId, value) {
+    if (isExamLocked) {
+      return
+    }
+
+    setExamState((current) => ({
+      ...current,
+      answers: {
+        ...current.answers,
+        [questionId]: value,
+      },
+    }))
+  }
+
+  function updateWriting(taskId, value) {
+    if (isExamLocked) {
+      return
+    }
+
+    setExamState((current) => ({
+      ...current,
+      writing: {
+        ...current.writing,
+        [taskId]: value,
+      },
+    }))
+  }
+
+  function updateTeacherScore(group, criterionId, value) {
+    const scoreKey = group === 'writing' ? 'writingScores' : 'speakingScores'
+
+    setExamState((current) => ({
+      ...current,
+      teacherReview: {
+        ...current.teacherReview,
+        [scoreKey]: {
+          ...current.teacherReview[scoreKey],
+          [criterionId]: Number(value),
+        },
+        reviewedAt: new Date().toISOString(),
+      },
+    }))
+  }
+
+  function updateTeacherComment(field, value) {
+    setExamState((current) => ({
+      ...current,
+      teacherReview: {
+        ...current.teacherReview,
+        [field]: value,
+        reviewedAt: new Date().toISOString(),
+      },
+    }))
+  }
+
+  function goToSection(sectionId) {
+    if (!hasStarted && sectionId !== 'results') {
+      return
+    }
+
+    if (isExamLocked && sectionId !== 'results') {
+      return
+    }
+
+    if (currentSection === 'listening' && sectionId !== 'listening') {
+      stopListeningPlayback()
+    }
+
+    setCurrentSection(sectionId)
+  }
+
+  function startExam() {
+    if (isExamLocked) {
+      window.localStorage.removeItem(STORAGE_KEY)
+    }
+
+    const startedAt = new Date().toISOString()
+    setNow(Date.now())
+    setExamState({
+      ...createInitialState(),
+      startedAt,
+      lockedAt: '',
+      lockedReason: '',
+    })
+    setPlayCounts({})
+    setAudioState(createInitialAudioState())
+    setListeningError('')
+    setRecordingError('')
+    setCurrentSection('reading')
+    setIntroView('landing')
+    setOverviewChecks({})
+    setShowSubmitPrompt(false)
+    setTeacherToolsOpen(reviewRequested)
+  }
+
+  function playListeningSection(section) {
     if (isExamLocked) {
       setListeningError('Time is over. The exam is locked.')
       return
@@ -737,7 +839,7 @@ function App() {
     })
   }
 
-  const startRecording = async (partId) => {
+  async function startRecording(partId) {
     if (isExamLocked) {
       setRecordingError('Time is over. The exam is locked.')
       return
@@ -804,18 +906,13 @@ function App() {
       recorder.start()
       setRecordingError('')
       setActiveRecordingId(partId)
+      setRecordingElapsedSeconds(0)
     } catch {
       setRecordingError('Microphone access was blocked. Please allow microphone permissions and try again.')
     }
   }
 
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop()
-    }
-  }
-
-  const deleteRecording = (partId) => {
+  function deleteRecording(partId) {
     if (isExamLocked) {
       return
     }
@@ -831,7 +928,7 @@ function App() {
     }))
   }
 
-  const exportSubmission = () => {
+  function exportSubmission() {
     const payload = {
       version: 1,
       exportedAt: new Date().toISOString(),
@@ -841,7 +938,7 @@ function App() {
         durationSeconds: EXAM_DURATION_SECONDS,
         startedAt: examState.startedAt,
         lockedAt: examState.lockedAt,
-        exportedAfterLock: isExamLocked,
+        lockedReason: examState.lockedReason,
         remainingSeconds,
       },
       results: {
@@ -868,7 +965,7 @@ function App() {
     )
   }
 
-  const importSubmission = async (event) => {
+  async function importSubmission(event) {
     const file = event.target.files && event.target.files[0]
     if (!file) {
       return
@@ -879,8 +976,8 @@ function App() {
       const parsed = JSON.parse(raw)
       const nextState = mergeImportedState(parsed.state || parsed)
       setExamState(nextState)
-      setTeacherMode(true)
-      goToSection('results')
+      setCurrentSection('results')
+      setTeacherToolsOpen(true)
     } catch {
       setRecordingError('The submission file could not be imported.')
     } finally {
@@ -888,778 +985,1695 @@ function App() {
     }
   }
 
-  const printCertificate = () => {
-    window.print()
-  }
-
-  const nextSection = () => {
-    const currentIndex = EXAM_SECTIONS.indexOf(currentSection)
-    const next = EXAM_SECTIONS[currentIndex + 1]
+  function nextSection() {
+    const currentIndex = SECTION_ORDER.indexOf(currentSection)
+    const next = SECTION_ORDER[currentIndex + 1]
     if (next) {
       goToSection(next)
+      return
     }
+
+    setShowSubmitPrompt(true)
   }
 
-  const previousSection = () => {
-    const currentIndex = EXAM_SECTIONS.indexOf(currentSection)
-    const previous = EXAM_SECTIONS[currentIndex - 1]
+  function previousSection() {
+    const currentIndex = SECTION_ORDER.indexOf(currentSection)
+    const previous = SECTION_ORDER[currentIndex - 1]
     if (previous) {
       goToSection(previous)
     }
   }
 
-  return (
-    <div className={`app-shell section-${currentSection}`}>
-      {currentSection === 'overview' && (
-        <header className="hero-panel">
-          <div className="hero-copy hero-copy-full">
-            <p className="eyebrow">Private English session designed only for Galina</p>
-            <h1>{examData.meta.examTitle}</h1>
-            <p className="hero-text">{examData.meta.subtitle}</p>
-            <p className="hero-support">
-              {examData.overview.intro}
-              <span>{examData.overview.introRu}</span>
-            </p>
-            <div className="hero-mini-strip">
-              <span>{examData.meta.estimatedMinutes} min</span>
-              <span>4 skills</span>
-              <span>Headphones + mic</span>
-            </div>
-          </div>
-        </header>
-      )}
-
-      {hasActiveAttempt && (
-        <section className={`surface nav-panel ${isExamLocked ? 'is-locked' : ''}`}>
-          <div className="progress-copy">
-            <p className="mini-label">Galina's exam</p>
-            <strong>{progressPercent}% complete</strong>
-            <span>{completedSkills} of 4 sections done</span>
-            <div className="progress-track" aria-hidden="true">
-              <div className="progress-fill" style={{ width: `${progressPercent}%` }} />
-            </div>
-          </div>
-
-          <div className={`timer-pill ${remainingSeconds <= 600 && !isExamLocked ? 'urgent' : ''} ${isExamLocked ? 'locked' : ''}`}>
-            <span>{isExamLocked ? 'Time over' : 'Time left'}</span>
-            <strong>{isExamLocked ? 'Locked' : formatCountdown(remainingSeconds)}</strong>
-          </div>
-
-          <nav className="section-nav" aria-label="Exam sections">
-            {visibleNavSections.map((sectionId) => {
-              const navLabels = {
-                reading: 'Read',
-                listening: 'Listen',
-                writing: 'Write',
-                speaking: 'Speak',
-                results: 'Finish',
-              }
-              const label = navLabels[sectionId]
-              const isActive = currentSection === sectionId
-              const isSkill = ['reading', 'listening', 'writing', 'speaking'].includes(sectionId)
-              const isComplete = isSkill ? completion[sectionId] : false
-
-              return (
-                <button
-                  key={sectionId}
-                  className={`nav-chip ${isActive ? 'active' : ''} ${isComplete ? 'complete' : ''}`}
-                  onClick={() => goToSection(sectionId)}
-                  type="button"
-                >
-                  {label}
-                </button>
-              )
-            })}
-          </nav>
-        </section>
-      )}
-
-      {currentSection === 'overview' && (
-        <section className="surface section-panel">
-          <div className="section-heading">
-            <div>
-              <p className="mini-label">Session brief</p>
-              <h2>Start the exam</h2>
-            </div>
-            <div className="score-pill">
-              <span>Private session</span>
-              <strong>{examData.meta.studentName}</strong>
-            </div>
-          </div>
-
-          <div className="overview-grid">
-            <article className="content-card overview-lead">
-              <h3>Ready when you are</h3>
-              <p className="task-prompt">
-                Find a quiet place, use headphones, and finish the full session in one sitting.
-              </p>
-              <p className="support-note">{examData.overview.missionRu}</p>
-              {hasLockedAttempt && (
-                <p className="support-note">
-                  A previous attempt on this device has ended. Press Start to begin a new exam.
-                </p>
-              )}
-
-              <div className="quick-facts">
-                <span>3-hour timer</span>
-                <span>One sitting only</span>
-                <span>Timer starts after this button</span>
-              </div>
-
-              <div className="action-row">
-                <button className="primary-button" type="button" onClick={startExam}>
-                  Start the exam
-                </button>
-              </div>
-
-              <div className="meta-line">
-                <span>Started: {formatTimestamp(examState.startedAt)}</span>
-                <span>Progress saves automatically in this browser</span>
-              </div>
-            </article>
-
-            <article className="content-card overview-card">
-              <h3>Before you start</h3>
-              <ul className="plain-list">
-                {examData.overview.rules.slice(0, 4).map((rule) => (
-                  <li key={rule}>{rule}</li>
-                ))}
-              </ul>
-            </article>
-          </div>
-        </section>
-      )}
-
-      {currentSection === 'reading' && (
-        <section className="surface section-panel">
-          <div className="section-heading">
-            <div>
-              <p className="mini-label">Section 1</p>
-              <h2>{examData.reading.sectionTitle}</h2>
-            </div>
-            <div className="score-pill">
-              <span>Questions answered</span>
-              <strong>
-                {readingScore.answered}/{readingScore.totalQuestions}
-              </strong>
-            </div>
-          </div>
-          <SectionPrelude config={SKILL_SECTION_MAP.reading} />
-          <p className="instruction-text">{examData.reading.instruction}</p>
-
-          {examData.reading.passages.map((passage) => (
-            <article key={passage.id} className="exam-card">
-              <div className="card-header">
-                <h3>{passage.title}</h3>
-                <span>{passage.questions.length} questions</span>
-              </div>
-
-              <div className="passage-box">
-                {passage.text.map((paragraph) => (
-                  <p key={paragraph}>{paragraph}</p>
-                ))}
-              </div>
-
-              <div className="question-grid">
-                {passage.questions.map((question, index) => (
-                  <QuestionCard
-                    key={question.id}
-                    disabled={isExamLocked}
-                    index={index + 1}
-                    question={question}
-                    value={examState.answers[question.id]}
-                    onChange={updateAnswer}
-                  />
-                ))}
-              </div>
-            </article>
-          ))}
-
-          <div className="action-row">
-            <button className="primary-button" type="button" onClick={nextSection}>
-              Continue to listening
-            </button>
-          </div>
-        </section>
-      )}
-
-      {currentSection === 'listening' && (
-        <section className="surface section-panel">
-          <div className="section-heading">
-            <div>
-              <p className="mini-label">Section 2</p>
-              <h2>{examData.listening.sectionTitle}</h2>
-            </div>
-            <div className="score-pill">
-              <span>Questions answered</span>
-              <strong>
-                {listeningScore.answered}/{listeningScore.totalQuestions}
-              </strong>
-            </div>
-          </div>
-          <SectionPrelude config={SKILL_SECTION_MAP.listening} />
-
-          <p className="instruction-text">{examData.listening.instruction}</p>
-          <p className="support-note">{examData.listening.playerNote}</p>
-
-          {listeningError && <p className="error-text">{listeningError}</p>}
-
-          {examData.listening.sections.map((section, sectionIndex) => (
-            <article key={section.id} className="exam-card">
-              <div className="card-header">
-                <h3>{section.title}</h3>
-                <span>Plays left: {section.maxPlays - (playCounts[section.id] || 0)}</span>
-              </div>
-
-              <p className="hint-line">Listen for: {section.listenFor.join(' • ')}</p>
-
-              <ListeningPlayer
-                activeListeningId={activeListeningId}
-                audioState={audioState[section.id]}
-                disabled={isExamLocked}
-                onPlay={() => playListeningSection(section)}
-                playCount={playCounts[section.id] || 0}
-                section={section}
-                sectionIndex={sectionIndex}
-              />
-
-              <div className="question-grid">
-                {section.questions.map((question, index) => (
-                  <QuestionCard
-                    key={question.id}
-                    disabled={isExamLocked}
-                    index={index + 1}
-                    question={question}
-                    value={examState.answers[question.id]}
-                    onChange={updateAnswer}
-                  />
-                ))}
-              </div>
-            </article>
-          ))}
-
-          <div className="action-row">
-            <button className="primary-button" type="button" onClick={nextSection}>
-              Continue to writing
-            </button>
-            <button className="ghost-button" type="button" onClick={previousSection}>
-              Back to reading
-            </button>
-          </div>
-        </section>
-      )}
-
-      {currentSection === 'writing' && (
-        <section className="surface section-panel">
-          <div className="section-heading">
-            <div>
-              <p className="mini-label">Section 3</p>
-              <h2>{examData.writing.sectionTitle}</h2>
-            </div>
-            <div className="score-pill">
-              <span>Tasks drafted</span>
-              <strong>{writingCompletedCount}/{examData.writing.tasks.length}</strong>
-            </div>
-          </div>
-          <SectionPrelude config={SKILL_SECTION_MAP.writing} />
-
-          <p className="instruction-text">{examData.writing.instruction}</p>
-
-          {examData.writing.tasks.map((task) => {
-            const value = examState.writing[task.id]
-            const words = countWords(value)
-
-            return (
-              <article key={task.id} className="exam-card">
-                <div className="card-header">
-                  <h3>
-                    {task.title} / {task.titleRu}
-                  </h3>
-                  <span>
-                    {words} words | target {task.minWords}-{task.maxWords}
-                  </span>
-                </div>
-
-                <p className="task-prompt">{task.prompt}</p>
-                <p className="hint-line">Include: {task.supportPoints.join(' • ')}</p>
-                <textarea
-                  className="essay-field"
-                  disabled={isExamLocked}
-                  value={value}
-                  onChange={(event) => updateWriting(task.id, event.target.value)}
-                  placeholder="Write your answer here..."
-                  rows={8}
-                />
-              </article>
-            )
-          })}
-
-          <div className="action-row">
-            <button className="primary-button" type="button" onClick={nextSection}>
-              Continue to speaking
-            </button>
-            <button className="ghost-button" type="button" onClick={previousSection}>
-              Back to listening
-            </button>
-          </div>
-        </section>
-      )}
-
-      {currentSection === 'speaking' && (
-        <section className="surface section-panel">
-          <div className="section-heading">
-            <div>
-              <p className="mini-label">Section 4</p>
-              <h2>{examData.speaking.sectionTitle}</h2>
-            </div>
-            <div className="score-pill">
-              <span>Recordings saved</span>
-              <strong>{speakingCompletedCount}/{examData.speaking.parts.length}</strong>
-            </div>
-          </div>
-          <SectionPrelude config={SKILL_SECTION_MAP.speaking} />
-
-          <p className="instruction-text">{examData.speaking.instruction}</p>
-          <p className="support-note">{examData.speaking.browserNote}</p>
-          {recordingError && <p className="error-text">{recordingError}</p>}
-
-          {examData.speaking.parts.map((part) => {
-            const recording = examState.speaking[part.id].recording
-
-            return (
-              <article key={part.id} className="exam-card">
-                <div className="card-header">
-                  <h3>{part.title}</h3>
-                  <span>{part.duration}</span>
-                </div>
-
-                <p className="task-prompt">{part.prompt}</p>
-                <p className="hint-line">Cover: {part.followUps.join(' • ')}</p>
-
-                <div className="recording-bar">
-                  {activeRecordingId === part.id ? (
-                    <button className="primary-button is-recording" type="button" onClick={stopRecording}>
-                      Stop recording
-                    </button>
-                  ) : (
-                    <button className="primary-button" type="button" disabled={isExamLocked} onClick={() => startRecording(part.id)}>
-                      {recording ? 'Record again' : 'Start recording'}
-                    </button>
-                  )}
-
-                  {recording && (
-                    <>
-                      <span className="recording-tag">{recording.durationLabel}</span>
-                      <button className="ghost-button" type="button" disabled={isExamLocked} onClick={() => deleteRecording(part.id)}>
-                        Delete
-                      </button>
-                    </>
-                  )}
-                </div>
-
-                {recording && (
-                  <audio className="audio-player" controls src={recording.dataUrl}>
-                    Your browser does not support audio playback.
-                  </audio>
-                )}
-              </article>
-            )
-          })}
-
-          <div className="action-row">
-            <button className="primary-button" type="button" onClick={nextSection}>
-              Go to results
-            </button>
-            <button className="ghost-button" type="button" onClick={previousSection}>
-              Back to writing
-            </button>
-          </div>
-        </section>
-      )}
-
-      {currentSection === 'results' && (
-        <section className="surface section-panel">
-          {isExamLocked && (
-            <div className="lock-banner">
-              <span>Time is over</span>
-              <strong>The exam is locked.</strong>
-              <p>No more answers can be changed. Download the submission file and send it to Ramazan.</p>
-            </div>
-          )}
-
-          <div className="section-heading">
-            <div>
-              <p className="mini-label">Results</p>
-              <h2>Assessment summary and certificate</h2>
-            </div>
-            <div className="score-pill large">
-              <span>Overall readiness</span>
-              <strong>{readinessLabel}</strong>
-            </div>
-          </div>
-
-          <div className="results-editorial">
-            <article className="content-card">
-              <h3>Session complete</h3>
-              <p>{studentSummary}</p>
-              <p className="support-note">Private readiness summary only. This is not an official IELTS result.</p>
-            </article>
-          </div>
-
-          <div className="results-grid">
-            <article className="result-card">
-              <span>Reading accuracy</span>
-              <strong>
-                {readingScore.earned}/{readingScore.possible}
-              </strong>
-              <p>{readingVerdict}</p>
-            </article>
-
-            <article className="result-card">
-              <span>Listening focus</span>
-              <strong>
-                {listeningScore.earned}/{listeningScore.possible}
-              </strong>
-              <p>{listeningVerdict}</p>
-            </article>
-
-            <article className={`result-card ${writingReviewed ? '' : 'pending'}`.trim()}>
-              <span>Writing review</span>
-              <strong>{writingReviewed ? `${writingTeacherScore}/20` : 'Pending review'}</strong>
-              <p>{writingReviewed ? 'Reviewer marks saved' : 'Reviewer-scored after submission'}</p>
-            </article>
-
-            <article className={`result-card ${speakingReviewed ? '' : 'pending'}`.trim()}>
-              <span>Speaking review</span>
-              <strong>{speakingReviewed ? `${speakingTeacherScore}/20` : 'Pending review'}</strong>
-              <p>{speakingReviewed ? 'Reviewer marks saved' : 'Reviewer-scored after submission'}</p>
-            </article>
-          </div>
-
-          <div className={`completion-banner ${finalReviewReady ? '' : 'pending'}`.trim()}>
-            <div>
-              <span>{finalReviewReady ? 'Total score' : 'Current scored sections'}</span>
-              <strong>
-                {totalScore}/{maxScore}
-              </strong>
-            </div>
-            <div>
-              <span>{finalReviewReady ? 'Percent' : 'Current percent'}</span>
-              <strong>{totalPercent}%</strong>
-            </div>
-            <div>
-              <span>{finalReviewReady ? 'Pass line' : 'Final review'}</span>
-              <strong>{finalReviewReady ? `${examData.meta.passPercentage}%` : 'Writing + speaking pending'}</strong>
-            </div>
-          </div>
-
-          <details className="results-details">
-            <summary>Show revision details</summary>
-            <div className="teacher-panel diagnostics-panel">
-              <div className="teacher-column">
-                <h3>Next revision focus</h3>
-                <div className="diagnostic-list">
-                  {revisionPriorities.length > 0 ? (
-                    revisionPriorities.map((item) => (
-                      <article key={item.tag} className="diagnostic-card priority">
-                        <div>
-                          <span>{item.tag}</span>
-                          <strong>{item.percent}%</strong>
-                        </div>
-                        <p>
-                          {item.earned}/{item.possible} points across {item.totalQuestions} tasks
-                        </p>
-                      </article>
-                    ))
-                  ) : (
-                    <p className="support-note">No low-scoring grammar area has been detected in the auto-scored sections.</p>
-                  )}
-                </div>
-              </div>
-
-              <div className="teacher-column">
-                <h3>Most confident areas</h3>
-                <div className="diagnostic-list">
-                  {strongestAreas.map((item) => (
-                    <article key={item.tag} className="diagnostic-card">
-                      <div>
-                        <span>{item.tag}</span>
-                        <strong>{item.percent}%</strong>
-                      </div>
-                      <p>
-                        {item.earned}/{item.possible} points across {item.totalQuestions} tasks
-                      </p>
-                    </article>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </details>
-
-          <div className="action-row">
-            <button className="primary-button" type="button" onClick={exportSubmission}>
-              Download submission file
-            </button>
-            {!isExamLocked && (
-              <button className="ghost-button" type="button" onClick={previousSection}>
-                Back to speaking
-              </button>
-            )}
-          </div>
-
-          <details className="results-details reviewer-details">
-            <summary>Teacher tools</summary>
-            <div className="action-row reviewer-actions">
-              <button className="ghost-button" type="button" onClick={printCertificate}>
-                Print certificate
-              </button>
-              <button className="ghost-button" type="button" onClick={() => setTeacherMode((current) => !current)}>
-                {teacherMode ? 'Hide reviewer tools' : 'Open reviewer tools'}
-              </button>
-            </div>
-          </details>
-
-          {teacherMode && (
-            <div className="action-row reviewer-actions">
-              <label className="ghost-button file-trigger" htmlFor={importInputId}>
-                Import reviewer file
-              </label>
-              <input
-                id={importInputId}
-                className="hidden-input"
-                type="file"
-                accept="application/json"
-                onChange={importSubmission}
-              />
-            </div>
-          )}
-
-          {teacherMode && (
-            <div className="teacher-panel">
-              <div className="teacher-column">
-                <h3>Writing review</h3>
-                {examData.writing.rubric.map((criterion) => (
-                  <RubricSlider
-                    key={criterion.id}
-                    criterion={criterion}
-                    value={examState.teacherReview.writingScores[criterion.id]}
-                    onChange={(value) => updateTeacherScore('writing', criterion.id, value)}
-                  />
-                ))}
-                <textarea
-                  className="teacher-textarea"
-                  rows={4}
-                  value={examState.teacherReview.writingComment}
-                  onChange={(event) => updateTeacherComment('writingComment', event.target.value)}
-                  placeholder="Writing feedback for Galina..."
-                />
-              </div>
-
-              <div className="teacher-column">
-                <h3>Speaking review</h3>
-                {examData.speaking.rubric.map((criterion) => (
-                  <RubricSlider
-                    key={criterion.id}
-                    criterion={criterion}
-                    value={examState.teacherReview.speakingScores[criterion.id]}
-                    onChange={(value) => updateTeacherScore('speaking', criterion.id, value)}
-                  />
-                ))}
-                <textarea
-                  className="teacher-textarea"
-                  rows={4}
-                  value={examState.teacherReview.speakingComment}
-                  onChange={(event) => updateTeacherComment('speakingComment', event.target.value)}
-                  placeholder="Speaking feedback for Galina..."
-                />
-              </div>
-            </div>
-          )}
-
-          {teacherMode && (
-            <div className="teacher-summary">
-              <h3>Reviewer summary</h3>
-              <textarea
-                className="teacher-textarea"
-                rows={4}
-                value={examState.teacherReview.overallComment}
-                onChange={(event) => updateTeacherComment('overallComment', event.target.value)}
-                placeholder="Overall next steps, strengths, and revision focus..."
-              />
-              <p className="meta-line">Reviewed: {formatTimestamp(examState.teacherReview.reviewedAt)}</p>
-            </div>
-          )}
-
-          <section className="certificate-card print-area">
-            <p className="certificate-overline">{examData.meta.certificateTitle}</p>
-            <h3>{examData.meta.studentName}</h3>
-            <p className="certificate-subtitle">{examData.meta.certificateSubtitle}</p>
-            <div className="certificate-metrics">
-              <div>
-                <span>Completion</span>
-                <strong>{Object.values(completion).every(Boolean) ? 'All sections finished' : 'In progress'}</strong>
-              </div>
-              <div>
-                <span>Readiness</span>
-                <strong>{readinessLabel}</strong>
-              </div>
-              <div>
-                <span>Final score</span>
-                <strong>{finalReviewReady ? `${totalScore}/${maxScore}` : 'Pending reviewer marks'}</strong>
-              </div>
-            </div>
-            <p className="certificate-footer">{examData.meta.certificateFooter}</p>
-            <div className="signature-row">
-              <div>
-                <span>Teacher</span>
-                <strong>{examData.meta.teacherName}</strong>
-              </div>
-              <div>
-                <span>Date</span>
-                <strong>{formatTimestamp(examState.teacherReview.reviewedAt || examState.startedAt)}</strong>
-              </div>
-            </div>
-          </section>
-        </section>
-      )}
-    </div>
-  )
-}
-
-function QuestionCard({ disabled = false, index, question, value, onChange }) {
-  return (
-    <div className={`question-card ${isFilled(value) ? 'answered' : ''} ${disabled ? 'locked' : ''}`} style={{ '--card-delay': `${(index - 1) * 55}ms` }}>
-      <div className="question-meta">
-        <span>
-          Q{index} · {question.points} pts
-        </span>
+  if (showPreExamFlow) {
+    return (
+      <div className="exam-app">
+        {introView === 'landing' ? (
+          <LandingPage
+            hasLockedAttempt={hasLockedAttempt}
+            totalSectionPoints={totalSectionPoints}
+            onContinue={() => setIntroView('overview')}
+          />
+        ) : (
+          <OverviewPage
+            allChecklistReady={allChecklistReady}
+            checks={overviewChecks}
+            hasLockedAttempt={hasLockedAttempt}
+            onBack={() => setIntroView('landing')}
+            onToggleCheck={(index) =>
+              setOverviewChecks((current) => ({
+                ...current,
+                [index]: !current[index],
+              }))
+            }
+            onBegin={startExam}
+          />
+        )}
       </div>
-      <p className="question-prompt">{question.prompt}</p>
+    )
+  }
 
-      {question.type === 'multipleChoice' && (
-        <div className="option-list">
-          {question.options.map((option) => (
-            <label key={option} className={`option-chip ${value === option ? 'selected' : ''}`}>
-              <input
-                checked={value === option}
-                disabled={disabled}
-                name={question.id}
-                onChange={() => onChange(question.id, option)}
-                type="radio"
-              />
-              <span>{option}</span>
-            </label>
-          ))}
-        </div>
+  return (
+    <div className="exam-app">
+      {currentSection !== 'results' && (
+        <ExamNav
+          currentSection={currentSection}
+          onSectionChange={goToSection}
+          remainingSeconds={remainingSeconds}
+          progressPercent={skillProgressPercent}
+          completedSkills={completedSkills}
+          isExamLocked={isExamLocked}
+          onSubmit={() => setShowSubmitPrompt(true)}
+        />
       )}
 
-      {question.type === 'trueFalseNotGiven' && (
-        <div className="option-list compact">
-          {['True', 'False', 'Not Given'].map((option) => (
-            <label key={option} className={`option-chip ${value === option ? 'selected' : ''}`}>
-              <input
-                checked={value === option}
-                disabled={disabled}
-                name={question.id}
-                onChange={() => onChange(question.id, option)}
-                type="radio"
-              />
-              <span>{option}</span>
-            </label>
-          ))}
-        </div>
-      )}
+      <main className={`page-frame ${currentSection === 'results' ? 'results-frame' : ''}`}>
+        {currentSection === 'reading' && (
+          <ReadingSection
+            answers={examState.answers}
+            disabled={isExamLocked}
+            onAnswer={updateAnswer}
+            onContinue={nextSection}
+          />
+        )}
 
-      {question.type === 'shortText' && (
-        <input
-          className="short-answer"
-          disabled={disabled}
-          onChange={(event) => onChange(question.id, event.target.value)}
-          placeholder="Write a short answer..."
-          type="text"
-          value={value}
+        {currentSection === 'listening' && (
+          <ListeningSection
+            activeListeningId={activeListeningId}
+            answers={examState.answers}
+            audioState={audioState}
+            disabled={isExamLocked}
+            error={listeningError}
+            onAnswer={updateAnswer}
+            onBack={previousSection}
+            onContinue={nextSection}
+            onPlay={playListeningSection}
+            playCounts={playCounts}
+          />
+        )}
+
+        {currentSection === 'writing' && (
+          <WritingSection
+            disabled={isExamLocked}
+            onBack={previousSection}
+            onContinue={nextSection}
+            onTextChange={updateWriting}
+            texts={examState.writing}
+          />
+        )}
+
+        {currentSection === 'speaking' && (
+          <SpeakingSection
+            activeRecordingId={activeRecordingId}
+            disabled={isExamLocked}
+            error={recordingError}
+            onBack={previousSection}
+            onContinue={() => setShowSubmitPrompt(true)}
+            onDeleteRecording={deleteRecording}
+            onStartRecording={startRecording}
+            onStopRecording={stopRecording}
+            recordingElapsedSeconds={recordingElapsedSeconds}
+            recordings={examState.speaking}
+          />
+        )}
+
+        {currentSection === 'results' && (
+          <ResultsPage
+            completion={completion}
+            examState={examState}
+            finalReviewReady={finalReviewReady}
+            importInputId={importInputId}
+            objectivePercent={objectivePercent}
+            onExport={exportSubmission}
+            onImport={importSubmission}
+            onPrint={() => window.print()}
+            onTeacherComment={updateTeacherComment}
+            onTeacherScore={updateTeacherScore}
+            readingScore={readingScore}
+            readinessLabel={readinessLabel}
+            reviewMode={reviewMode}
+            revisionPriorities={revisionPriorities}
+            speakingReviewed={speakingReviewed}
+            speakingTeacherScore={speakingTeacherScore}
+            studentSummary={studentSummary}
+            strongestAreas={strongestAreas}
+            submittedEarly={submittedEarly}
+            totalPercent={totalPercent}
+            totalScore={totalScore}
+            maxScore={maxScore}
+            writingReviewed={writingReviewed}
+            writingTeacherScore={writingTeacherScore}
+            listeningScore={listeningScore}
+            onToggleTeacherTools={() => setTeacherToolsOpen((current) => !current)}
+            teacherToolsOpen={teacherToolsOpen}
+          />
+        )}
+      </main>
+
+      {showSubmitPrompt && (
+        <SubmitModal
+          completion={completion}
+          onClose={() => setShowSubmitPrompt(false)}
+          onSubmit={() => lockExam('submitted')}
+          remainingSeconds={remainingSeconds}
+          speakingCount={speakingCompletedCount}
+          writingCount={writingCompletedCount}
         />
       )}
     </div>
   )
 }
 
-function ListeningPlayer({ activeListeningId, audioState, disabled = false, onPlay, playCount, section, sectionIndex }) {
-  const isPlaying = activeListeningId === section.id && audioState.isPlaying
-  const remainingTime = Math.max(0, (audioState.duration || 0) - (audioState.currentTime || 0))
-  const progressPercent =
-    audioState.duration > 0 ? Math.min(100, (audioState.currentTime / audioState.duration) * 100) : 0
-  const isDisabled = disabled || isPlaying || playCount >= section.maxPlays
+function LandingPage({ hasLockedAttempt, onContinue, totalSectionPoints }) {
+  return (
+    <section className="landing-shell">
+      <div className="landing-hero">
+        <div className="landing-noise" />
 
-  let buttonLabel = `Play track ${sectionIndex + 1}`
+        <div className="landing-topbar">
+          <div className="landing-badge">
+            <span className="landing-badge-icon">
+              <Award size={15} />
+            </span>
+            <span>Private Exam</span>
+          </div>
 
-  if (isPlaying) {
-    buttonLabel = 'Playing now'
-  } else if (disabled) {
-    buttonLabel = 'Exam locked'
-  } else if (playCount > 0 && playCount < section.maxPlays) {
-    buttonLabel = `Replay track ${sectionIndex + 1}`
-  } else if (playCount >= section.maxPlays) {
-    buttonLabel = 'Replay limit reached'
-  }
+          <div className="landing-time-pill">
+            <Clock size={14} />
+            <span>{examData.meta.estimatedMinutes} min</span>
+          </div>
+        </div>
+
+        <div className="landing-copy">
+          <p className="landing-overline">Unit 45 Readiness</p>
+          <h1>
+            Galina&apos;s
+            <br />
+            <span>English Exam</span>
+          </h1>
+          <p className="landing-subtitle">{examData.meta.subtitle}</p>
+
+          <div className="landing-focus-chips">
+            {examData.meta.focusAreas.map((area) => (
+              <span key={area}>{area}</span>
+            ))}
+          </div>
+        </div>
+
+        <div className="landing-footer">
+          <div className="teacher-avatar">R</div>
+          <div>
+            <strong>Prepared by {examData.meta.teacherName}</strong>
+            <span>{examData.meta.focusUnits}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="landing-panel">
+        <div className="landing-panel-inner">
+          <p className="panel-kicker">Exam Overview</p>
+
+          <div className="landing-section-list">
+            {examData.overview.sections.map((section) => {
+              const theme = SECTION_THEMES[section.id]
+              const Icon = theme.icon
+
+              return (
+                <article key={section.id} className="landing-section-card">
+                  <div className="landing-section-icon" style={{ background: theme.soft, color: theme.accent }}>
+                    <Icon size={18} />
+                  </div>
+
+                  <div className="landing-section-copy">
+                    <div className="landing-section-head">
+                      <strong>{section.title}</strong>
+                      <div>
+                        <span>{section.duration}</span>
+                        <em>{section.points} pts</em>
+                      </div>
+                    </div>
+                    <p>{section.description}</p>
+                  </div>
+                </article>
+              )
+            })}
+          </div>
+
+          <div className="landing-stats">
+            <div>
+              <strong>{totalSectionPoints}</strong>
+              <span>Total Points</span>
+            </div>
+            <div>
+              <strong>{examData.meta.passPercentage}%</strong>
+              <span>Pass Score</span>
+            </div>
+            <div>
+              <strong>3 hrs</strong>
+              <span>Duration</span>
+            </div>
+          </div>
+
+          <div className="landing-rules-card">
+            <p>Key rules</p>
+            <ul>
+              {examData.overview.rules.slice(0, 4).map((rule) => (
+                <li key={rule}>
+                  <Star size={12} />
+                  <span>{rule}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <button className="primary-cta" type="button" onClick={onContinue}>
+            Review Exam & Begin
+            <ChevronRight size={18} />
+          </button>
+
+          <p className="landing-note">
+            Timer starts only after you press <strong>Start Exam</strong>.
+          </p>
+
+          {hasLockedAttempt && (
+            <p className="landing-warning">
+              A past attempt on this device is already closed. Starting again will create a fresh session.
+            </p>
+          )}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function OverviewPage({ allChecklistReady, checks, hasLockedAttempt, onBack, onToggleCheck, onBegin }) {
+  return (
+    <section className="overview-shell">
+      <div className="overview-topbar">
+        <button className="topbar-link" type="button" onClick={onBack}>
+          <ChevronLeft size={16} />
+          <span>Back</span>
+        </button>
+
+        <div className="topbar-status">
+          <span className="status-dot" />
+          <strong>Exam Overview</strong>
+        </div>
+
+        <button className="topbar-primary" disabled={!allChecklistReady} type="button" onClick={onBegin}>
+          <Play size={14} />
+          <span>Start Exam</span>
+        </button>
+      </div>
+
+      <div className="overview-body">
+        <header className="overview-header">
+          <p className="overview-overline">Private IELTS-style test</p>
+          <h2>Exam Brief</h2>
+          <p>{examData.overview.intro}</p>
+          <em>{examData.overview.introRu}</em>
+        </header>
+
+        <div className="overview-grid">
+          <div className="overview-main">
+            <section className="overview-card">
+              <div className="overview-card-head">
+                <Target size={16} />
+                <strong>Exam Sections</strong>
+              </div>
+
+              <div className="overview-sections-grid">
+                {examData.overview.sections.map((section) => {
+                  const theme = SECTION_THEMES[section.id]
+                  const Icon = theme.icon
+                  return (
+                    <article key={section.id} className="overview-section-card">
+                      <div className="overview-section-top">
+                        <div className="overview-section-icon" style={{ background: theme.soft, color: theme.accent }}>
+                          <Icon size={18} />
+                        </div>
+
+                        <div className="overview-section-points" style={{ background: theme.soft, color: theme.accent }}>
+                          {section.points} pts
+                        </div>
+                      </div>
+
+                      <h3>{section.title}</h3>
+                      <p className="section-translation">{section.titleRu}</p>
+                      <p className="overview-section-description">{section.description}</p>
+                      <span className="overview-section-duration">{section.duration}</span>
+                    </article>
+                  )
+                })}
+              </div>
+            </section>
+
+            <section className="overview-card">
+              <div className="overview-card-head">
+                <ShieldCheck size={16} />
+                <strong>Exam Rules</strong>
+              </div>
+
+              <div className="overview-rules">
+                {examData.overview.rules.map((rule, index) => (
+                  <div key={rule} className="overview-rule-row">
+                    <span>{index + 1}</span>
+                    <p>{rule}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section className="mission-card">
+              <p>A note from Ramazan</p>
+              <strong>{examData.overview.mission}</strong>
+            </section>
+          </div>
+
+          <aside className="overview-side">
+            <section className="overview-card">
+              <h3 className="side-heading">Pre-flight Checklist</h3>
+              <p className="side-copy">Tick every item before the exam begins.</p>
+
+              <div className="checklist-list">
+                {examData.overview.preflightChecklist.map((item, index) => {
+                  const checked = checks[index]
+                  return (
+                    <button
+                      key={item}
+                      className={`checklist-row ${checked ? 'checked' : ''}`}
+                      type="button"
+                      onClick={() => onToggleCheck(index)}
+                    >
+                      {checked ? <CheckCircle2 size={18} /> : <Circle size={18} />}
+                      <span>{item}</span>
+                    </button>
+                  )
+                })}
+              </div>
+
+              <div className="checklist-progress">
+                <div className="checklist-progress-copy">
+                  <span>Ready to begin?</span>
+                  <strong>
+                    {Object.values(checks).filter(Boolean).length}/{examData.overview.preflightChecklist.length}
+                  </strong>
+                </div>
+                <div className="checklist-progress-track">
+                  <div
+                    className="checklist-progress-fill"
+                    style={{
+                      width: `${(Object.values(checks).filter(Boolean).length / examData.overview.preflightChecklist.length) * 100}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            </section>
+
+            <section className="overview-card">
+              <h3 className="side-heading">At a Glance</h3>
+              <div className="overview-meta-list">
+                {[
+                  { label: 'Student', value: examData.meta.studentName },
+                  { label: 'Teacher', value: examData.meta.teacherName },
+                  { label: 'Duration', value: `${examData.meta.estimatedMinutes} minutes` },
+                  { label: 'Total points', value: '80 points' },
+                  { label: 'Pass threshold', value: `${examData.meta.passPercentage}%` },
+                  { label: 'Auto-graded', value: 'Reading + Listening' },
+                  { label: 'Manual review', value: 'Writing + Speaking' },
+                ].map((item) => (
+                  <div key={item.label} className="overview-meta-row">
+                    <span>{item.label}</span>
+                    <strong>{item.value}</strong>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <button className="primary-cta large" disabled={!allChecklistReady} type="button" onClick={onBegin}>
+              <Play size={16} />
+              <span>{allChecklistReady ? 'Start Exam — Timer Begins' : 'Complete checklist to start'}</span>
+            </button>
+
+            {!allChecklistReady && <p className="landing-note compact">Tick all checklist items above.</p>}
+            {hasLockedAttempt && (
+              <p className="landing-warning compact">A previous attempt is already closed on this device.</p>
+            )}
+          </aside>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function ExamNav({
+  currentSection,
+  onSectionChange,
+  remainingSeconds,
+  progressPercent,
+  completedSkills,
+  isExamLocked,
+  onSubmit,
+}) {
+  const isUrgent = remainingSeconds <= 600
+  const isCritical = remainingSeconds <= 180
 
   return (
-    <div className="listening-player">
-      <div className="player-topline">
-        <div>
-          <span className="player-label">Track status</span>
-          <strong>{isPlaying ? 'In progress' : audioState.hasFinished ? 'Completed' : 'Ready'}</strong>
+    <header className="exam-nav">
+      <div className="exam-nav-inner">
+        <div className="exam-brand">
+          <strong>Unit 45 Exam</strong>
+          <span>{examData.meta.studentName}</span>
         </div>
-        <div className="player-meta">
-          <span>
-            Plays: {playCount}/{section.maxPlays}
-          </span>
-          <span>Time left: {formatDuration(remainingTime)}</span>
+
+        <nav className="exam-tabs" aria-label="Exam sections">
+          {SECTION_ORDER.map((sectionId) => {
+            const theme = SECTION_THEMES[sectionId]
+            const Icon = theme.icon
+            const label = examData.overview.sections.find((section) => section.id === sectionId)?.title || sectionId
+            const isActive = currentSection === sectionId
+
+            return (
+              <button
+                key={sectionId}
+                className={`exam-tab ${isActive ? 'active' : ''}`}
+                style={isActive ? { background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent}dd)` } : undefined}
+                type="button"
+                onClick={() => onSectionChange(sectionId)}
+              >
+                <Icon size={15} />
+                <span>{label}</span>
+              </button>
+            )
+          })}
+        </nav>
+
+        <div className={`timer-box ${isCritical ? 'critical' : isUrgent ? 'urgent' : ''} ${isExamLocked ? 'locked' : ''}`}>
+          {isCritical ? <AlertTriangle size={14} /> : <Clock size={14} />}
+          <strong>{isExamLocked ? 'Locked' : formatCountdown(remainingSeconds)}</strong>
         </div>
-      </div>
 
-      <div className="player-progress" aria-hidden="true">
-        <div className="player-progress-fill" style={{ width: `${progressPercent}%` }} />
-      </div>
-
-      <div className="listening-controls">
-        <button className={`primary-button ${isPlaying ? 'is-active' : ''}`} type="button" disabled={isDisabled} onClick={onPlay}>
-          {buttonLabel}
+        <button className="submit-button" type="button" onClick={onSubmit}>
+          <Send size={14} />
+          <span>Submit</span>
         </button>
-        <p className="player-caption">
-          {disabled ? 'Time is over. Listening is locked.' : 'No pause. No speed change. Start only when ready.'}
+      </div>
+
+      <div className="exam-progress-track" aria-hidden="true">
+        <div className="exam-progress-fill" style={{ width: `${progressPercent}%` }} />
+      </div>
+
+      <div className="exam-progress-copy">
+        <span>{progressPercent}% complete</span>
+        <strong>{completedSkills} of 4 sections finished</strong>
+      </div>
+    </header>
+  )
+}
+
+function ReadingSection({ answers, disabled, onAnswer, onContinue }) {
+  const [openPassage, setOpenPassage] = useState(examData.reading.passages[0]?.id || '')
+  const [showStrategy, setShowStrategy] = useState(false)
+  const totalAnswered = examData.reading.passages.flatMap((passage) => passage.questions).filter((question) => answers[question.id]).length
+  const totalQuestions = examData.reading.passages.flatMap((passage) => passage.questions).length
+  return (
+    <section className="section-shell">
+      <SectionHeader
+        accent={SECTION_THEMES.reading.accent}
+        icon={<BookOpen size={18} />}
+        label="Reading"
+        pointsLabel="Points"
+        secondaryMetric={`${totalAnswered}/${totalQuestions}`}
+        secondaryLabel="Answered"
+        translation="Чтение"
+        valueLabel="20"
+      />
+
+      <p className="section-intro">{examData.reading.instruction}</p>
+
+      <StrategyDrawer
+        items={examData.reading.checklist}
+        open={showStrategy}
+        strategy={examData.reading.strategy}
+        title="Coach Strategy"
+        onToggle={() => setShowStrategy((current) => !current)}
+      />
+
+      <div className="section-stack">
+        {examData.reading.passages.map((passage, passagePosition) => {
+          const answeredCount = passage.questions.filter((question) => isFilled(answers[question.id])).length
+          const isOpen = openPassage === passage.id
+
+          return (
+            <article key={passage.id} className="section-card">
+              <button className="section-card-toggle" type="button" onClick={() => setOpenPassage(isOpen ? '' : passage.id)}>
+                <div className="section-card-title">
+                  <span>{passagePosition + 1}</span>
+                  <div>
+                    <strong>{passage.title}</strong>
+                    <em>
+                      {answeredCount}/{passage.questions.length} questions answered
+                    </em>
+                  </div>
+                </div>
+
+                <div className="section-card-dots">
+                  {passage.questions.map((question) => (
+                    <i key={question.id} className={answers[question.id] ? 'filled' : ''} />
+                  ))}
+                  {isOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                </div>
+              </button>
+
+              {isOpen && (
+                <div className="section-card-body">
+                  <div className="reading-passage">
+                    <p className="passage-label">Passage Text</p>
+                    <div className="reading-copy">
+                      {passage.text.map((paragraph) => (
+                        <p key={paragraph}>{paragraph}</p>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="question-list">
+                    {passage.questions.map((question, questionPosition) => {
+                      const questionOffset = examData.reading.passages
+                        .slice(0, passagePosition)
+                        .reduce((sum, item) => sum + item.questions.length, 0)
+                      return (
+                        <QuestionCard
+                          key={question.id}
+                          disabled={disabled}
+                          index={questionOffset + questionPosition + 1}
+                          question={question}
+                          value={answers[question.id]}
+                          onChange={onAnswer}
+                        />
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </article>
+          )
+        })}
+      </div>
+
+      <SectionFooter canGoBack={false} onBack={null} onContinue={onContinue} continueLabel="Continue to listening" />
+    </section>
+  )
+}
+
+function ListeningSection({
+  activeListeningId,
+  answers,
+  audioState,
+  disabled,
+  error,
+  onAnswer,
+  onBack,
+  onContinue,
+  onPlay,
+  playCounts,
+}) {
+  const [openTrack, setOpenTrack] = useState(examData.listening.sections[0]?.id || '')
+  const [showStrategy, setShowStrategy] = useState(false)
+  const totalAnswered = examData.listening.sections.flatMap((section) => section.questions).filter((question) => answers[question.id]).length
+  const totalQuestions = examData.listening.sections.flatMap((section) => section.questions).length
+  return (
+    <section className="section-shell">
+      <SectionHeader
+        accent={SECTION_THEMES.listening.accent}
+        icon={<Headphones size={18} />}
+        label="Listening"
+        pointsLabel="Points"
+        secondaryMetric={`${totalAnswered}/${totalQuestions}`}
+        secondaryLabel="Answered"
+        translation="Аудирование"
+        valueLabel="20"
+      />
+
+      <p className="section-intro">{examData.listening.instruction}</p>
+
+      <div className="warning-card listening-warning">
+        <AlertCircle size={16} />
+        <p>{examData.listening.coachNote}</p>
+      </div>
+
+      <StrategyDrawer
+        items={examData.listening.checklist}
+        open={showStrategy}
+        strategy={examData.listening.strategy}
+        title="Coach Strategy"
+        onToggle={() => setShowStrategy((current) => !current)}
+      />
+
+      {error && <p className="error-banner">{error}</p>}
+
+      <div className="section-stack">
+        {examData.listening.sections.map((section, sectionPosition) => {
+          const answeredCount = section.questions.filter((question) => isFilled(answers[question.id])).length
+          const isOpen = openTrack === section.id
+
+          return (
+            <article key={section.id} className="section-card">
+              <button className="section-card-toggle" type="button" onClick={() => setOpenTrack(isOpen ? '' : section.id)}>
+                <div className="section-card-title">
+                  <span className="blue">{sectionPosition + 1}</span>
+                  <div>
+                    <strong>{section.title}</strong>
+                    <em>
+                      {answeredCount}/{section.questions.length} questions answered
+                    </em>
+                  </div>
+                </div>
+
+                <div className="section-card-dots">
+                  {section.questions.map((question) => (
+                    <i key={question.id} className={answers[question.id] ? 'filled blue' : 'blue'} />
+                  ))}
+                  {isOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                </div>
+              </button>
+
+              {isOpen && (
+                <div className="section-card-body">
+                  <ListeningPlayer
+                    activeListeningId={activeListeningId}
+                    audioState={audioState[section.id]}
+                    disabled={disabled}
+                    playCount={playCounts[section.id] || 0}
+                    section={section}
+                    onPlay={() => onPlay(section)}
+                  />
+
+                  <div className="question-list">
+                    {section.questions.map((question, questionPosition) => {
+                      const questionOffset = examData.listening.sections
+                        .slice(0, sectionPosition)
+                        .reduce((sum, item) => sum + item.questions.length, 0)
+                      return (
+                        <QuestionCard
+                          key={question.id}
+                          disabled={disabled}
+                          index={questionOffset + questionPosition + 1}
+                          question={question}
+                          value={answers[question.id]}
+                          onChange={onAnswer}
+                        />
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </article>
+          )
+        })}
+      </div>
+
+      <SectionFooter canGoBack onBack={onBack} onContinue={onContinue} continueLabel="Continue to writing" />
+    </section>
+  )
+}
+
+function WritingSection({ disabled, onBack, onContinue, onTextChange, texts }) {
+  const [showStrategy, setShowStrategy] = useState(false)
+  const totalWords = examData.writing.tasks.reduce((sum, task) => sum + countWords(texts[task.id] || ''), 0)
+  const tasksStarted = examData.writing.tasks.filter((task) => isFilled(texts[task.id] || '')).length
+
+  return (
+    <section className="section-shell">
+      <SectionHeader
+        accent={SECTION_THEMES.writing.accent}
+        icon={<PenLine size={18} />}
+        label="Writing"
+        pointsLabel="Total words"
+        secondaryMetric={`${tasksStarted}/${examData.writing.tasks.length}`}
+        secondaryLabel="Started"
+        translation="Письмо"
+        valueLabel={String(totalWords)}
+      />
+
+      <p className="section-intro">{examData.writing.instruction}</p>
+
+      <StrategyDrawer
+        items={examData.writing.checklist}
+        open={showStrategy}
+        strategy={examData.writing.strategy}
+        title="Coach Strategy"
+        onToggle={() => setShowStrategy((current) => !current)}
+      />
+
+      <div className="warning-card writing-warning">
+        <CheckCircle2 size={16} />
+        <p>
+          <strong>Manual review:</strong> {examData.writing.coachNote}
         </p>
+      </div>
+
+      <div className="section-stack">
+        {examData.writing.tasks.map((task) => (
+          <WritingTaskCard
+            key={task.id}
+            disabled={disabled}
+            task={task}
+            text={texts[task.id] || ''}
+            onTextChange={onTextChange}
+          />
+        ))}
+      </div>
+
+      <section className="rubric-card">
+        <strong>Assessment Rubric</strong>
+        <div className="rubric-grid">
+          {examData.writing.rubric.map((criterion) => (
+            <article key={criterion.id}>
+              <h4>{criterion.label}</h4>
+              <p>{criterion.labelRu}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <SectionFooter canGoBack onBack={onBack} onContinue={onContinue} continueLabel="Continue to speaking" />
+    </section>
+  )
+}
+
+function SpeakingSection({
+  activeRecordingId,
+  disabled,
+  error,
+  onBack,
+  onContinue,
+  onDeleteRecording,
+  onStartRecording,
+  onStopRecording,
+  recordingElapsedSeconds,
+  recordings,
+}) {
+  const [showStrategy, setShowStrategy] = useState(false)
+  const recordedCount = examData.speaking.parts.filter((part) => recordings[part.id] && recordings[part.id].recording).length
+
+  return (
+    <section className="section-shell">
+      <SectionHeader
+        accent={SECTION_THEMES.speaking.accent}
+        icon={<Mic size={18} />}
+        label="Speaking"
+        pointsLabel="Points"
+        secondaryMetric={`${recordedCount}/${examData.speaking.parts.length}`}
+        secondaryLabel="Recorded"
+        translation="Говорение"
+        valueLabel="20"
+      />
+
+      <p className="section-intro">{examData.speaking.instruction}</p>
+
+      <div className="warning-card speaking-warning">
+        <Mic size={16} />
+        <p>{examData.speaking.browserNote}</p>
+      </div>
+
+      <StrategyDrawer
+        items={examData.speaking.checklist}
+        open={showStrategy}
+        strategy={examData.speaking.strategy}
+        title="Coach Strategy"
+        onToggle={() => setShowStrategy((current) => !current)}
+      />
+
+      {error && <p className="error-banner">{error}</p>}
+
+      <div className="section-stack">
+        {examData.speaking.parts.map((part) => {
+          const recording = recordings[part.id]?.recording || null
+          const isRecording = activeRecordingId === part.id
+
+          return (
+            <article key={part.id} className="task-card speaking-card">
+              <div className="task-head">
+                <div>
+                  <h3>{part.title}</h3>
+                  <p>{part.duration}</p>
+                </div>
+
+                {recording && (
+                  <span className="task-status success">
+                    <CheckCircle2 size={14} />
+                    Recorded
+                  </span>
+                )}
+              </div>
+
+              <div className="task-prompt-box">
+                <p>{part.prompt}</p>
+              </div>
+
+              <div className="follow-up-list">
+                {part.followUps.map((item) => (
+                  <span key={item}>{item}</span>
+                ))}
+              </div>
+
+              <div className="recording-row">
+                {!isRecording ? (
+                  <button
+                    className="record-button"
+                    disabled={disabled}
+                    type="button"
+                    onClick={() => onStartRecording(part.id)}
+                  >
+                    <Mic size={16} />
+                    <span>{recording ? 'Record Again' : 'Start Recording'}</span>
+                  </button>
+                ) : (
+                  <button className="record-button live" type="button" onClick={onStopRecording}>
+                    <Square size={16} />
+                    <span>Stop Recording</span>
+                  </button>
+                )}
+
+                {isRecording && (
+                  <div className="record-live-badge">
+                    <i />
+                    <span>{formatDuration(recordingElapsedSeconds)}</span>
+                  </div>
+                )}
+
+                {recording && !isRecording && (
+                  <button className="ghost-action" disabled={disabled} type="button" onClick={() => onDeleteRecording(part.id)}>
+                    <Trash2 size={15} />
+                    <span>Re-record</span>
+                  </button>
+                )}
+              </div>
+
+              {recording && getRecordingSource(recording) && (
+                <div className="recording-playback">
+                  <span>Your recording ({recording.durationLabel})</span>
+                  <audio controls src={getRecordingSource(recording)}>
+                    Your browser does not support audio playback.
+                  </audio>
+                </div>
+              )}
+            </article>
+          )
+        })}
+      </div>
+
+      <section className="rubric-card">
+        <strong>Speaking Assessment Rubric</strong>
+        <div className="rubric-grid">
+          {examData.speaking.rubric.map((criterion) => (
+            <article key={criterion.id} className="purple">
+              <h4>{criterion.label}</h4>
+              <p>{criterion.labelRu}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <SectionFooter canGoBack onBack={onBack} onContinue={onContinue} continueLabel="Review & submit" />
+    </section>
+  )
+}
+
+function ResultsPage({
+  completion,
+  examState,
+  finalReviewReady,
+  importInputId,
+  objectivePercent,
+  onExport,
+  onImport,
+  onPrint,
+  onTeacherComment,
+  onTeacherScore,
+  readingScore,
+  readinessLabel,
+  reviewMode,
+  revisionPriorities,
+  speakingReviewed,
+  speakingTeacherScore,
+  studentSummary,
+  strongestAreas,
+  submittedEarly,
+  totalPercent,
+  totalScore,
+  maxScore,
+  writingReviewed,
+  writingTeacherScore,
+  listeningScore,
+  onToggleTeacherTools,
+  teacherToolsOpen,
+}) {
+  const displayPercent = finalReviewReady ? totalPercent : objectivePercent
+  const displayScore = finalReviewReady ? `${totalScore}/${maxScore}` : `${readingScore.earned + listeningScore.earned}/${readingScore.possible + listeningScore.possible}`
+  const statusTone = displayPercent >= examData.meta.passPercentage ? '#c59a4a' : '#c0394a'
+  const today = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+
+  const sectionResults = [
+    {
+      id: 'reading',
+      label: 'Reading',
+      labelRu: 'Чтение',
+      icon: BookOpen,
+      score: readingScore.earned,
+      max: readingScore.possible,
+      color: SECTION_THEMES.reading.accent,
+      soft: SECTION_THEMES.reading.soft,
+      border: SECTION_THEMES.reading.border,
+      mode: 'auto',
+    },
+    {
+      id: 'listening',
+      label: 'Listening',
+      labelRu: 'Аудирование',
+      icon: Headphones,
+      score: listeningScore.earned,
+      max: listeningScore.possible,
+      color: SECTION_THEMES.listening.accent,
+      soft: SECTION_THEMES.listening.soft,
+      border: SECTION_THEMES.listening.border,
+      mode: 'auto',
+    },
+    {
+      id: 'writing',
+      label: 'Writing',
+      labelRu: 'Письмо',
+      icon: PenLine,
+      score: writingReviewed ? writingTeacherScore : null,
+      max: 20,
+      color: SECTION_THEMES.writing.accent,
+      soft: SECTION_THEMES.writing.soft,
+      border: SECTION_THEMES.writing.border,
+      mode: writingReviewed ? 'reviewed' : 'manual',
+      note: writingReviewed ? 'Reviewer marks saved' : 'Pending reviewer marks',
+    },
+    {
+      id: 'speaking',
+      label: 'Speaking',
+      labelRu: 'Говорение',
+      icon: Mic,
+      score: speakingReviewed ? speakingTeacherScore : null,
+      max: 20,
+      color: SECTION_THEMES.speaking.accent,
+      soft: SECTION_THEMES.speaking.soft,
+      border: SECTION_THEMES.speaking.border,
+      mode: speakingReviewed ? 'reviewed' : 'manual',
+      note: speakingReviewed ? 'Reviewer marks saved' : 'Pending reviewer marks',
+    },
+  ]
+
+  return (
+    <section className="results-shell">
+      <header className="results-hero">
+        <div className="results-hero-copy">
+          <div className="results-hero-badge">
+            <span className="landing-badge-icon gold">
+              <Award size={18} />
+            </span>
+            <div>
+              <span>Exam Complete</span>
+              <strong>{today}</strong>
+            </div>
+          </div>
+
+          <h2>{examData.meta.studentName}&apos;s Results</h2>
+          <p>{examData.meta.subtitle}</p>
+          <p className="results-disclaimer">Private readiness summary only. This is not an official IELTS result.</p>
+        </div>
+
+        <div className="results-score-shell">
+          <div
+            className="results-score-ring"
+            style={{
+              '--score-color': statusTone,
+              '--score-percent': `${displayPercent}%`,
+            }}
+          >
+            <div className="results-score-inner">
+              <strong>{displayPercent}%</strong>
+              <span>{finalReviewReady ? 'full review' : 'auto-graded'}</span>
+            </div>
+          </div>
+
+          <div className="results-score-note" style={{ color: statusTone }}>
+            {displayPercent >= examData.meta.passPercentage ? <CheckCircle size={16} /> : <AlertCircle size={16} />}
+            <strong>{displayScore}</strong>
+          </div>
+        </div>
+      </header>
+
+      {submittedEarly && (
+        <div className="results-banner submitted">
+          <CheckCircle2 size={18} />
+          <div>
+            <strong>Exam submitted.</strong>
+            <p>Galina ended the session before the 3-hour timer finished.</p>
+          </div>
+        </div>
+      )}
+
+      {examState.lockedReason === 'timeout' && (
+        <div className="results-banner timeout">
+          <AlertTriangle size={18} />
+          <div>
+            <strong>Time is over.</strong>
+            <p>The session closed automatically when the 3-hour timer ended.</p>
+          </div>
+        </div>
+      )}
+
+      <section className="results-summary-card">
+        <h3>Session complete</h3>
+        <p>{studentSummary}</p>
+      </section>
+
+      <section className="results-breakdown">
+        {sectionResults.map((section) => {
+          const Icon = section.icon
+          const percent = section.score === null ? null : Math.round((section.score / section.max) * 100)
+          return (
+            <article key={section.id} className="result-card" style={{ borderColor: section.border }}>
+              <div className="result-card-head">
+                <div className="result-card-title">
+                  <span style={{ background: section.soft, color: section.color }}>
+                    <Icon size={16} />
+                  </span>
+                  <div>
+                    <strong>{section.label}</strong>
+                    <em>{section.labelRu}</em>
+                  </div>
+                </div>
+
+                {section.score === null ? (
+                  <div className="pending-pill">Pending review</div>
+                ) : (
+                  <div className="result-score-box">
+                    <strong style={{ color: section.color }}>
+                      {section.score}/{section.max}
+                    </strong>
+                    <span>{percent}%</span>
+                  </div>
+                )}
+              </div>
+
+              {section.score === null ? (
+                <p className="result-note">{section.note}</p>
+              ) : (
+                <>
+                  <div className="mini-progress">
+                    <div className="mini-progress-fill" style={{ width: `${percent}%`, background: section.color }} />
+                  </div>
+                  <p className="result-note" style={{ color: section.color }}>
+                    {percent >= examData.meta.passPercentage ? 'Passed section threshold' : 'Below pass threshold'}
+                  </p>
+                </>
+              )}
+            </article>
+          )
+        })}
+      </section>
+
+      <div className="analysis-grid">
+        <section className="analysis-card">
+          <h3>Next revision focus</h3>
+          <div className="analysis-list">
+            {revisionPriorities.length > 0 ? (
+              revisionPriorities.map((item) => (
+                <article key={item.tag}>
+                  <div>
+                    <strong>{item.tag}</strong>
+                    <span>{item.percent}%</span>
+                  </div>
+                  <p>
+                    {item.earned}/{item.possible} points across {item.totalQuestions} tasks
+                  </p>
+                </article>
+              ))
+            ) : (
+              <p className="result-note">No urgent low-scoring grammar area appeared in the auto-scored sections.</p>
+            )}
+          </div>
+        </section>
+
+        <section className="analysis-card">
+          <h3>Most confident areas</h3>
+          <div className="analysis-list">
+            {strongestAreas.map((item) => (
+              <article key={item.tag} className="strong">
+                <div>
+                  <strong>{item.tag}</strong>
+                  <span>{item.percent}%</span>
+                </div>
+                <p>
+                  {item.earned}/{item.possible} points across {item.totalQuestions} tasks
+                </p>
+              </article>
+            ))}
+          </div>
+        </section>
+      </div>
+
+      <section className="results-meta-card">
+        <div>
+          <span>{finalReviewReady ? 'Total score' : 'Current score'}</span>
+          <strong>
+            {totalScore}/{maxScore}
+          </strong>
+        </div>
+        <div>
+          <span>{finalReviewReady ? 'Percent' : 'Auto-graded percent'}</span>
+          <strong>{finalReviewReady ? `${totalPercent}%` : `${objectivePercent}%`}</strong>
+        </div>
+        <div>
+          <span>{finalReviewReady ? 'Pass line' : 'Final review'}</span>
+          <strong>{finalReviewReady ? `${examData.meta.passPercentage}%` : 'Writing + speaking pending'}</strong>
+        </div>
+      </section>
+
+      <section className="certificate-card print-area">
+        <div className="certificate-head">
+          <div>
+            <p>{examData.meta.certificateTitle}</p>
+            <div className="certificate-stars">
+              {Array.from({ length: 5 }).map((_, index) => (
+                <Star key={index} size={14} />
+              ))}
+            </div>
+          </div>
+          <span className="certificate-medal">
+            <Award size={26} />
+          </span>
+        </div>
+
+        <span className="certificate-label">This certifies that</span>
+        <h3>{examData.meta.studentName}</h3>
+        <p className="certificate-subtitle">{examData.meta.certificateSubtitle}</p>
+
+        <div className="certificate-stats">
+          {[
+            { label: 'Exam title', value: 'Unit 45 Readiness' },
+            { label: 'Status', value: readinessLabel },
+            { label: 'Date', value: today },
+            { label: 'Teacher', value: examData.meta.teacherName },
+          ].map((item) => (
+            <div key={item.label}>
+              <span>{item.label}</span>
+              <strong>{item.value}</strong>
+            </div>
+          ))}
+        </div>
+
+        <p className="certificate-footer">{examData.meta.certificateFooter}</p>
+
+        <div className="certificate-actions">
+          <button className="primary-cta slim" type="button" onClick={onPrint}>
+            <Printer size={16} />
+            <span>Print Certificate</span>
+          </button>
+
+          {reviewMode && (
+            <button className="ghost-action" type="button" onClick={onExport}>
+              <Download size={16} />
+              <span>Download Session File</span>
+            </button>
+          )}
+        </div>
+      </section>
+
+      {reviewMode && (
+        <section className="reviewer-shell">
+          <div className="reviewer-topbar">
+            <div>
+              <h3>Reviewer Tools</h3>
+              <p>Visible only in review mode.</p>
+            </div>
+
+            <div className="reviewer-actions">
+              <label className="ghost-action file-trigger" htmlFor={importInputId}>
+                <Download size={16} />
+                <span>Import Saved Session</span>
+              </label>
+              <input id={importInputId} className="hidden-input" type="file" accept="application/json" onChange={onImport} />
+
+              <button className="ghost-action" type="button" onClick={onToggleTeacherTools}>
+                {teacherToolsOpen ? <X size={16} /> : <ChevronDown size={16} />}
+                <span>{teacherToolsOpen ? 'Hide Reviewer Panel' : 'Show Reviewer Panel'}</span>
+              </button>
+            </div>
+          </div>
+
+          {teacherToolsOpen && (
+            <>
+              <div className="review-grid">
+                <section className="review-card">
+                  <h4>Writing review</h4>
+                  {examData.writing.rubric.map((criterion) => (
+                    <RubricSlider
+                      key={criterion.id}
+                      criterion={criterion}
+                      value={examState.teacherReview.writingScores[criterion.id]}
+                      onChange={(value) => onTeacherScore('writing', criterion.id, value)}
+                    />
+                  ))}
+                  <textarea
+                    className="review-textarea"
+                    rows={5}
+                    value={examState.teacherReview.writingComment}
+                    onChange={(event) => onTeacherComment('writingComment', event.target.value)}
+                    placeholder="Writing feedback for Galina..."
+                  />
+                </section>
+
+                <section className="review-card">
+                  <h4>Speaking review</h4>
+                  {examData.speaking.rubric.map((criterion) => (
+                    <RubricSlider
+                      key={criterion.id}
+                      criterion={criterion}
+                      value={examState.teacherReview.speakingScores[criterion.id]}
+                      onChange={(value) => onTeacherScore('speaking', criterion.id, value)}
+                    />
+                  ))}
+                  <textarea
+                    className="review-textarea"
+                    rows={5}
+                    value={examState.teacherReview.speakingComment}
+                    onChange={(event) => onTeacherComment('speakingComment', event.target.value)}
+                    placeholder="Speaking feedback for Galina..."
+                  />
+                </section>
+              </div>
+
+              <section className="review-card">
+                <h4>Speaking recordings</h4>
+                <div className="review-audio-list">
+                  {examData.speaking.parts.map((part) => {
+                    const recording = examState.speaking[part.id]?.recording
+                    return (
+                      <article key={part.id} className="review-audio-card">
+                        <div>
+                          <strong>{part.title}</strong>
+                          <p>{part.prompt}</p>
+                        </div>
+                        {recording && getRecordingSource(recording) ? (
+                          <audio controls src={getRecordingSource(recording)}>
+                            Your browser does not support audio playback.
+                          </audio>
+                        ) : (
+                          <span className="pending-pill">No recording saved</span>
+                        )}
+                      </article>
+                    )
+                  })}
+                </div>
+              </section>
+
+              <section className="review-card">
+                <h4>Overall reviewer summary</h4>
+                <textarea
+                  className="review-textarea"
+                  rows={5}
+                  value={examState.teacherReview.overallComment}
+                  onChange={(event) => onTeacherComment('overallComment', event.target.value)}
+                  placeholder="Overall next steps, strengths, and revision focus..."
+                />
+                <p className="review-timestamp">Reviewed: {formatTimestamp(examState.teacherReview.reviewedAt)}</p>
+              </section>
+            </>
+          )}
+        </section>
+      )}
+
+      {!reviewMode && (
+        <section className="student-finish-note">
+          <span>Completion</span>
+          <strong>{Object.values(completion).every(Boolean) ? 'All sections finished' : 'Session ended before all sections were completed'}</strong>
+        </section>
+      )}
+    </section>
+  )
+}
+
+function SubmitModal({ completion, onClose, onSubmit, remainingSeconds, speakingCount, writingCount }) {
+  return (
+    <div className="modal-backdrop" role="presentation" onClick={(event) => event.target === event.currentTarget && onClose()}>
+      <div className="modal-card">
+        <button className="modal-close" type="button" onClick={onClose}>
+          <X size={16} />
+        </button>
+
+        <span className="modal-icon">
+          <AlertTriangle size={24} />
+        </span>
+        <h3>Submit Exam?</h3>
+        <p>This will end the session immediately, lock all answers, and open the results screen.</p>
+
+        <div className="modal-status">
+          {[
+            {
+              label: 'Reading',
+              detail: completion.reading ? 'completed' : 'still in progress',
+              done: completion.reading,
+            },
+            {
+              label: 'Listening',
+              detail: completion.listening ? 'completed' : 'still in progress',
+              done: completion.listening,
+            },
+            {
+              label: 'Writing',
+              detail: `${writingCount}/${examData.writing.tasks.length} tasks started`,
+              done: completion.writing,
+            },
+            {
+              label: 'Speaking',
+              detail: `${speakingCount}/${examData.speaking.parts.length} recordings saved`,
+              done: completion.speaking,
+            },
+          ].map((item) => (
+            <div key={item.label} className="modal-status-row">
+              <div>
+                <span className={`status-dot-large ${item.done ? 'done' : ''}`} />
+                <strong>{item.label}</strong>
+              </div>
+              <p>{item.detail}</p>
+            </div>
+          ))}
+        </div>
+
+        <p className="modal-time">Time remaining: {formatCountdown(remainingSeconds)}</p>
+
+        <div className="modal-actions">
+          <button className="ghost-action" type="button" onClick={onClose}>
+            Continue Exam
+          </button>
+          <button className="primary-cta slim" type="button" onClick={onSubmit}>
+            <Send size={16} />
+            <span>Submit Now</span>
+          </button>
+        </div>
       </div>
     </div>
   )
 }
 
-function SectionPrelude({ config }) {
+function SectionHeader({
+  accent,
+  icon,
+  label,
+  pointsLabel,
+  secondaryMetric,
+  secondaryLabel,
+  translation,
+  valueLabel,
+}) {
   return (
-    <details className="section-prelude">
-      <summary>Section tips</summary>
-      <div className="section-prelude-body">
-        <article className="prelude-card main">
-          <span className="mini-label">How to approach this section</span>
-          <h3>{config.coachNote}</h3>
-          <p>{config.strategy}</p>
-        </article>
+    <header className="section-header">
+      <div className="section-title">
+        <span className="section-icon" style={{ background: `${accent}14`, color: accent }}>
+          {icon}
+        </span>
 
-        <article className="prelude-card prelude-side">
-          <span className="mini-label">Keep in mind</span>
-          <ul className="plain-list">
-            {config.checklist.map((item) => (
+        <div>
+          <h2>{label}</h2>
+          <p>{translation}</p>
+        </div>
+      </div>
+
+      <div className="section-metrics">
+        <article className="metric-card">
+          <strong>{secondaryMetric}</strong>
+          <span>{secondaryLabel}</span>
+        </article>
+        <article className="metric-card">
+          <strong>{valueLabel}</strong>
+          <span>{pointsLabel}</span>
+        </article>
+      </div>
+    </header>
+  )
+}
+
+function StrategyDrawer({ items, open, strategy, title, onToggle }) {
+  return (
+    <div className="strategy-drawer">
+      <button className={`strategy-toggle ${open ? 'open' : ''}`} type="button" onClick={onToggle}>
+        <div>
+          <Lightbulb size={14} />
+          <span>{title}</span>
+        </div>
+        {open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+      </button>
+
+      {open && (
+        <div className="strategy-body">
+          <p>{strategy}</p>
+          <ul>
+            {items.map((item) => (
               <li key={item}>{item}</li>
             ))}
           </ul>
-          <div className="support-strip compact">
-            {config.targetSkills.map((item) => (
-              <span key={item}>{item}</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function WritingTaskCard({ disabled, task, text, onTextChange }) {
+  const [showTips, setShowTips] = useState(false)
+  const wordCount = countWords(text)
+  const inRange = wordCount >= task.minWords && wordCount <= task.maxWords
+  const overLimit = wordCount > task.maxWords
+
+  return (
+    <article className="task-card">
+      <div className="task-head">
+        <div>
+          <h3>{task.title}</h3>
+          <p>{task.titleRu}</p>
+        </div>
+        <div className={`word-pill ${inRange ? 'good' : overLimit ? 'bad' : ''}`}>
+          {task.minWords}-{task.maxWords} words
+        </div>
+      </div>
+
+      <div className="task-prompt-box">
+        <p>{task.prompt}</p>
+      </div>
+
+      <button className={`tips-toggle ${showTips ? 'open' : ''}`} type="button" onClick={() => setShowTips((current) => !current)}>
+        <div>
+          <Lightbulb size={14} />
+          <span>Writing Tips</span>
+        </div>
+        {showTips ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+      </button>
+
+      {showTips && (
+        <div className="tips-body">
+          {task.supportPoints.map((item, index) => (
+            <div key={item}>
+              <strong>{index + 1}.</strong>
+              <span>{item}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="textarea-wrap">
+        <textarea
+          className="task-textarea"
+          disabled={disabled}
+          placeholder={`Write your response here... (${task.minWords}-${task.maxWords} words)`}
+          rows={8}
+          value={text}
+          onChange={(event) => onTextChange(task.id, event.target.value)}
+        />
+        <span className={`textarea-count ${inRange ? 'good' : overLimit ? 'bad' : ''}`}>
+          {wordCount} / {task.maxWords}w
+        </span>
+      </div>
+
+      {isFilled(text) && (
+        <p className={`task-status-line ${inRange ? 'good' : overLimit ? 'bad' : ''}`}>
+          {inRange
+            ? 'Word count is within range.'
+            : overLimit
+              ? `${wordCount - task.maxWords} words over the limit.`
+              : `${task.minWords - wordCount} more words needed.`}
+        </p>
+      )}
+    </article>
+  )
+}
+
+function QuestionCard({ disabled = false, index, question, value, onChange }) {
+  const isAnswered = isFilled(value)
+
+  return (
+    <article className={`question-card ${isAnswered ? 'answered' : ''} ${disabled ? 'locked' : ''}`}>
+      <div className="question-card-head">
+        <div className="question-headline">
+          <span className={`question-number ${isAnswered ? 'answered' : ''}`}>{index}</span>
+          <p>{question.prompt}</p>
+        </div>
+
+        <div className="question-badges">
+          {question.tags.map((tag) => (
+            <span key={tag}>{tag}</span>
+          ))}
+          <em>
+            {question.points} pt{question.points > 1 ? 's' : ''}
+          </em>
+        </div>
+      </div>
+
+      <div className="question-body">
+        {question.type === 'multipleChoice' && (
+          <div className="option-grid">
+            {question.options.map((option, optionIndex) => {
+              const isSelected = value === option
+              const letters = ['A', 'B', 'C', 'D']
+              return (
+                <button
+                  key={option}
+                  className={`option-button ${isSelected ? 'selected' : ''}`}
+                  disabled={disabled}
+                  type="button"
+                  onClick={() => onChange(question.id, option)}
+                >
+                  <strong>{letters[optionIndex]}</strong>
+                  <span>{option}</span>
+                </button>
+              )
+            })}
+          </div>
+        )}
+
+        {question.type === 'trueFalseNotGiven' && (
+          <div className="option-grid compact">
+            {[
+              { label: 'True', value: 'true' },
+              { label: 'False', value: 'false' },
+              { label: 'Not Given', value: 'not given' },
+            ].map((option) => (
+              <button
+                key={option.value}
+                className={`option-button pill ${value === option.value ? 'selected' : ''}`}
+                disabled={disabled}
+                type="button"
+                onClick={() => onChange(question.id, option.value)}
+              >
+                <span>{option.label}</span>
+              </button>
             ))}
           </div>
-        </article>
+        )}
+
+        {question.type === 'shortText' && (
+          <input
+            className="answer-input"
+            disabled={disabled}
+            placeholder="Type your answer here..."
+            type="text"
+            value={value || ''}
+            onChange={(event) => onChange(question.id, event.target.value)}
+          />
+        )}
       </div>
-    </details>
+    </article>
+  )
+}
+
+function ListeningPlayer({ activeListeningId, audioState, disabled = false, playCount, section, onPlay }) {
+  const isPlaying = activeListeningId === section.id && audioState.isPlaying
+  const remainingTime = Math.max(0, (audioState.duration || 0) - (audioState.currentTime || 0))
+  const progressPercent =
+    audioState.duration > 0 ? Math.min(100, (audioState.currentTime / audioState.duration) * 100) : 0
+  const canPlay = !disabled && !isPlaying && playCount < section.maxPlays
+
+  return (
+    <div className="audio-card">
+      <div className="audio-card-head">
+        <div>
+          <span>Audio Track</span>
+          <strong>{section.title}</strong>
+        </div>
+
+        <div className="audio-plays">
+          <div>
+            {Array.from({ length: section.maxPlays }).map((_, index) => (
+              <i key={index} className={index < playCount ? 'used' : ''} />
+            ))}
+          </div>
+          <span>
+            {playCount}/{section.maxPlays} plays
+          </span>
+        </div>
+      </div>
+
+      <div className="audio-progress" aria-hidden="true">
+        <div className="audio-progress-fill" style={{ width: `${progressPercent}%` }} />
+      </div>
+
+      <div className="audio-controls">
+        <button className={`audio-play-button ${isPlaying ? 'active' : ''}`} disabled={!canPlay} type="button" onClick={onPlay}>
+          {isPlaying ? <Square size={16} /> : <Play size={16} />}
+          <span>
+            {isPlaying
+              ? 'Playing now'
+              : playCount === 0
+                ? 'Play track'
+                : playCount < section.maxPlays
+                  ? 'Replay track'
+                  : 'Replay limit reached'}
+          </span>
+        </button>
+
+        <span className="audio-timer">
+          {formatDuration(audioState.currentTime)} / {audioState.duration ? formatDuration(audioState.duration) : '--:--'}
+        </span>
+      </div>
+
+      <p className="audio-caption">
+        {disabled
+          ? 'Time is over. Listening is locked.'
+          : `No pause. No speed change. ${formatDuration(remainingTime)} left in the current track once playback starts.`}
+      </p>
+
+      <div className="listen-for-row">
+        <span>Listen for</span>
+        <div>
+          {section.listenFor.map((item) => (
+            <i key={item}>{item}</i>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SectionFooter({ canGoBack, onBack, onContinue, continueLabel }) {
+  return (
+    <footer className="section-footer">
+      {canGoBack ? (
+        <button className="ghost-action" type="button" onClick={onBack}>
+          <ChevronLeft size={16} />
+          <span>Back</span>
+        </button>
+      ) : (
+        <span />
+      )}
+
+      <button className="primary-cta slim" type="button" onClick={onContinue}>
+        <span>{continueLabel}</span>
+        <ChevronRight size={16} />
+      </button>
+    </footer>
   )
 }
 
@@ -1667,11 +2681,11 @@ function RubricSlider({ criterion, value, onChange }) {
   return (
     <label className="rubric-row">
       <div>
-        <span>{criterion.label}</span>
-        <small>{criterion.labelRu}</small>
+        <strong>{criterion.label}</strong>
+        <span>{criterion.labelRu}</span>
       </div>
-      <input max="5" min="0" onChange={(event) => onChange(event.target.value)} step="0.5" type="range" value={value} />
-      <strong>{value}</strong>
+      <input max="5" min="0" step="0.5" type="range" value={value} onChange={(event) => onChange(event.target.value)} />
+      <em>{value}</em>
     </label>
   )
 }

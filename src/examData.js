@@ -14,8 +14,7 @@ export const examData = {
       'Galina completed her personalised Unit 45 English readiness exam and finished all assessed skills.',
     certificateFooter:
       'This document confirms completion of a private IELTS-style practice session prepared and reviewed by Ramazan Odinayev.',
-    accessCodeEnabled: false,
-    accessCode: '',
+    accessCodeEnabled: true,
   },
   overview: {
     intro:
@@ -32,7 +31,7 @@ export const examData = {
       'The exam timer is three hours and starts after pressing Start exam.',
       'Each listening track can be played only three times.',
       'Finish the writing tasks before you record speaking.',
-      'At the end, download the submission file and send it to Ramazan the same day.',
+      'Your answers and speaking recordings are saved automatically for Ramazan to review later.',
     ],
     preflightChecklist: [
       'Headphones ready',
