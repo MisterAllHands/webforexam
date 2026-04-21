@@ -1,13 +1,13 @@
 import { createClient } from '@supabase/supabase-js'
 
-const SUPABASE_URL = 'https://wswvamnfuvnrfekhbcjh.supabase.co'
-const SUPABASE_ANON_KEY = 'sb_publishable_CYL_3C2tBYMvQe-17kWrBw_vnp1mfSh'
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://ajvrosiqfcxkppzsncej.supabase.co'
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_8Tv1dlkOMMQHc8scFqd91A_vhlnnQJa'
 const TRUSTED_SESSION_KEY = 'galina-exam-trusted-session'
-const DRAFT_TITLE = 'exam::galina::unit45::attempt'
-const DRAFT_TYPE = 'call_script'
-const DRAFT_MODEL = 'galina-exam-web-v2'
-const STORAGE_BUCKET = 'documents'
-const EMAIL_SALT = 'galina-unit45-private-review'
+const ATTEMPTS_TABLE = 'exam_attempts'
+const EXAM_SLUG = 'galina-unit45'
+const STORAGE_BUCKET = 'exam-recordings'
+const STUDENT_EMAIL = 'galina-unit45-exam@private-exam.test'
+const REVIEWER_EMAIL = 'ramazan-review@private-exam.test'
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
@@ -21,35 +21,19 @@ export function isReviewModeRequest() {
   return new URLSearchParams(window.location.search).get('review') === '1'
 }
 
-function hashAccessCode(value) {
-  let first = 0xdeadbeef ^ value.length
-  let second = 0x41c6ce57 ^ value.length
-
-  for (let index = 0; index < value.length; index += 1) {
-    const code = value.charCodeAt(index)
-    first = Math.imul(first ^ code, 2654435761)
-    second = Math.imul(second ^ code, 1597334677)
-  }
-
-  first = Math.imul(first ^ (first >>> 16), 2246822507) ^ Math.imul(second ^ (second >>> 13), 3266489909)
-  second = Math.imul(second ^ (second >>> 16), 2246822507) ^ Math.imul(first ^ (first >>> 13), 3266489909)
-
-  return [first >>> 0, second >>> 0].map((item) => item.toString(36)).join('')
-}
-
-function getExamEmail(accessCode) {
-  return `exam-${hashAccessCode(`${EMAIL_SALT}:${accessCode}`)}@private-exam.test`
-}
-
 function normalizeAuthMessage(message) {
   const value = message.toLowerCase()
+
+  if (value.includes('fetch failed')) {
+    return 'The private exam backend is not reachable right now.'
+  }
 
   if (value.includes('invalid login credentials')) {
     return 'That access code does not match this private exam.'
   }
 
   if (value.includes('email not confirmed')) {
-    return 'This Supabase project is requiring email confirmation. I need one admin pass to finish backend setup.'
+    return 'This Supabase project is still blocking sign-in because email confirmation is enabled.'
   }
 
   if (value.includes('password')) {
@@ -57,6 +41,99 @@ function normalizeAuthMessage(message) {
   }
 
   return message
+}
+
+function getSessionEmail({ reviewMode = false } = {}) {
+  return reviewMode ? REVIEWER_EMAIL : STUDENT_EMAIL
+}
+
+function getExamStatus(payload) {
+  if (payload?.lockedAt) {
+    return 'locked'
+  }
+
+  if (payload?.startedAt) {
+    return 'in_progress'
+  }
+
+  return 'draft'
+}
+
+function sanitizeAttemptPayload(payload) {
+  if (!payload?.speaking) {
+    return payload
+  }
+
+  const nextSpeaking = {}
+
+  for (const [partId, partState] of Object.entries(payload.speaking)) {
+    nextSpeaking[partId] = {
+      recording: partState?.recording
+        ? {
+            ...partState.recording,
+            dataUrl: null,
+            playbackUrl: null,
+          }
+        : null,
+    }
+  }
+
+  return {
+    ...payload,
+    speaking: nextSpeaking,
+  }
+}
+
+async function hydrateRecordingPlaybackUrls(payload) {
+  if (!payload?.speaking) {
+    return payload
+  }
+
+  const nextSpeaking = {}
+
+  for (const [partId, partState] of Object.entries(payload.speaking)) {
+    const recording = partState?.recording
+
+    if (!recording) {
+      nextSpeaking[partId] = { recording: null }
+      continue
+    }
+
+    let playbackUrl = recording.playbackUrl || null
+
+    if (recording.storagePath) {
+      try {
+        playbackUrl = await getRecordingPlaybackUrl(recording.storagePath)
+      } catch {
+        playbackUrl = null
+      }
+    }
+
+    nextSpeaking[partId] = {
+      recording: {
+        ...recording,
+        dataUrl: null,
+        playbackUrl,
+      },
+    }
+  }
+
+  return {
+    ...payload,
+    speaking: nextSpeaking,
+  }
+}
+
+async function getActiveSessionOrThrow() {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
+
+  if (!session?.user?.id) {
+    throw new Error('The private exam session has expired. Re-enter the access code and try again.')
+  }
+
+  return session
 }
 
 export function rememberTrustedSession(email) {
@@ -72,21 +149,6 @@ export function isTrustedSession(session) {
   return Boolean(session?.user?.email && trustedEmail && trustedEmail === session.user.email)
 }
 
-async function ensureExamProfile(user) {
-  const { error } = await supabase.from('users').upsert(
-    {
-      id: user.id,
-      email: user.email ?? '',
-      first_name: 'Galina',
-    },
-    { onConflict: 'id' },
-  )
-
-  if (error) {
-    throw new Error(error.message)
-  }
-}
-
 export async function getCurrentSession() {
   const {
     data: { session },
@@ -100,57 +162,19 @@ export async function getCurrentSession() {
   return session
 }
 
-export async function openExamSession(accessCode) {
-  const email = getExamEmail(accessCode)
-
-  const signInAttempt = await supabase.auth.signInWithPassword({
+export async function openExamSession(accessCode, { reviewMode = false } = {}) {
+  const email = getSessionEmail({ reviewMode })
+  const { data, error } = await supabase.auth.signInWithPassword({
     email,
     password: accessCode,
   })
 
-  if (!signInAttempt.error && signInAttempt.data.session && signInAttempt.data.user) {
-    await ensureExamProfile(signInAttempt.data.user)
-    rememberTrustedSession(email)
-    return signInAttempt.data.session
+  if (error || !data.session || !data.user) {
+    throw new Error(normalizeAuthMessage(error?.message || 'The private exam space could not be opened.'))
   }
 
-  const signUpAttempt = await supabase.auth.signUp({
-    email,
-    password: accessCode,
-    options: {
-      data: {
-        scope: 'galina-private-exam',
-      },
-    },
-  })
-
-  if (signUpAttempt.error) {
-    throw new Error(normalizeAuthMessage(signInAttempt.error?.message || signUpAttempt.error.message))
-  }
-
-  if (signUpAttempt.data.session && signUpAttempt.data.user) {
-    await ensureExamProfile(signUpAttempt.data.user)
-    rememberTrustedSession(email)
-    return signUpAttempt.data.session
-  }
-
-  const retrySignIn = await supabase.auth.signInWithPassword({
-    email,
-    password: accessCode,
-  })
-
-  if (retrySignIn.error || !retrySignIn.data.session || !retrySignIn.data.user) {
-    throw new Error(
-      normalizeAuthMessage(
-        retrySignIn.error?.message ||
-          'The private exam space could not be opened. The backend may still require email confirmation.',
-      ),
-    )
-  }
-
-  await ensureExamProfile(retrySignIn.data.user)
   rememberTrustedSession(email)
-  return retrySignIn.data.session
+  return data.session
 }
 
 export async function signOutExamSession() {
@@ -164,48 +188,43 @@ export async function signOutExamSession() {
 
 export async function fetchLatestAttempt() {
   const { data, error } = await supabase
-    .from('drafts')
-    .select('id, content, created_at, updated_at')
-    .eq('draft_type', DRAFT_TYPE)
-    .eq('title', DRAFT_TITLE)
-    .eq('model_name', DRAFT_MODEL)
+    .from(ATTEMPTS_TABLE)
+    .select('id, owner_id, payload, created_at, updated_at')
+    .eq('exam_slug', EXAM_SLUG)
     .order('updated_at', { ascending: false })
     .limit(1)
+    .maybeSingle()
 
   if (error) {
     throw new Error(error.message)
   }
 
-  if (!data || data.length === 0) {
+  if (!data) {
     return null
   }
 
-  const [row] = data
-
-  try {
-    const parsed = JSON.parse(row.content)
-    return {
-      id: row.id,
-      payload: parsed,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-    }
-  } catch {
-    return null
+  return {
+    id: data.id,
+    ownerId: data.owner_id,
+    payload: await hydrateRecordingPlaybackUrls(data.payload || {}),
+    createdAt: data.created_at,
+    updatedAt: data.updated_at,
   }
 }
 
 export async function saveAttemptRemote(attemptId, payload) {
+  const session = await getActiveSessionOrThrow()
+  const sanitizedPayload = sanitizeAttemptPayload(payload)
+
   const body = {
-    title: DRAFT_TITLE,
-    draft_type: DRAFT_TYPE,
-    model_name: DRAFT_MODEL,
-    content: JSON.stringify(payload),
+    student_name: 'Galina',
+    status: getExamStatus(sanitizedPayload),
+    payload: sanitizedPayload,
   }
 
   if (attemptId) {
     const { data, error } = await supabase
-      .from('drafts')
+      .from(ATTEMPTS_TABLE)
       .update(body)
       .eq('id', attemptId)
       .select('id, updated_at')
@@ -218,9 +237,20 @@ export async function saveAttemptRemote(attemptId, payload) {
     return data
   }
 
+  if (session.user.email === REVIEWER_EMAIL) {
+    throw new Error('The reviewer panel is waiting for Galina to create the first exam attempt.')
+  }
+
   const { data, error } = await supabase
-    .from('drafts')
-    .insert(body)
+    .from(ATTEMPTS_TABLE)
+    .upsert(
+      {
+        exam_slug: EXAM_SLUG,
+        owner_id: session.user.id,
+        ...body,
+      },
+      { onConflict: 'exam_slug,owner_id' },
+    )
     .select('id, updated_at')
     .single()
 
@@ -242,13 +272,7 @@ export async function getRecordingPlaybackUrl(path) {
 }
 
 export async function uploadSpeakingRecording({ attemptId, partId, blob }) {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession()
-
-  if (!session?.user?.id) {
-    throw new Error('The private exam session has expired. Re-enter the access code and try again.')
-  }
+  const session = await getActiveSessionOrThrow()
 
   const extension = blob.type.includes('mp4')
     ? 'm4a'
@@ -268,11 +292,9 @@ export async function uploadSpeakingRecording({ attemptId, partId, blob }) {
     throw new Error(error.message)
   }
 
-  const playbackUrl = await getRecordingPlaybackUrl(objectPath)
-
   return {
     storagePath: objectPath,
-    playbackUrl,
+    playbackUrl: await getRecordingPlaybackUrl(objectPath),
   }
 }
 

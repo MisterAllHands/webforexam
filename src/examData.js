@@ -390,7 +390,7 @@ export const examData = {
   writing: {
     sectionTitle: 'Writing | Письмо',
     instruction:
-      'Write clearly and naturally. Ramazan will review these tasks manually after the submission file is received.',
+      'Write clearly and naturally. Ramazan will review these tasks manually after the exam is submitted.',
     coachNote:
       'Writing is where controlled grammar has to become personal language. The answer should sound like Galina, but the structure should stay clean and deliberate.',
     strategy:

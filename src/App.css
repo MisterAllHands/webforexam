@@ -215,6 +215,175 @@
   padding: 40px 28px;
 }
 
+.access-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(0, 1.02fr) minmax(380px, 0.98fr);
+}
+
+.access-hero {
+  position: relative;
+  overflow: hidden;
+  padding: 40px;
+  display: grid;
+  align-content: space-between;
+  gap: 28px;
+  background: linear-gradient(135deg, #120a10 0%, #231119 100%);
+}
+
+.access-hero::before,
+.access-hero::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.access-hero::before {
+  top: -160px;
+  right: -120px;
+  width: 420px;
+  height: 420px;
+  background: radial-gradient(circle, rgba(122, 37, 53, 0.42), transparent 68%);
+}
+
+.access-hero::after {
+  left: -120px;
+  bottom: -120px;
+  width: 340px;
+  height: 340px;
+  background: radial-gradient(circle, rgba(197, 154, 74, 0.22), transparent 68%);
+}
+
+.access-badge,
+.access-copy {
+  position: relative;
+  z-index: 1;
+}
+
+.access-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  width: fit-content;
+  padding: 12px 14px;
+  border-radius: 22px;
+  border: 1px solid rgba(197, 154, 74, 0.18);
+  background: rgba(255, 255, 255, 0.04);
+  color: #f0ece4;
+}
+
+.access-badge strong {
+  display: block;
+  font-family: 'Manrope', sans-serif;
+  font-size: 0.92rem;
+}
+
+.access-badge span:last-child {
+  color: #c59a4a;
+  font-size: 0.78rem;
+}
+
+.access-copy {
+  display: grid;
+  gap: 16px;
+  align-content: center;
+  max-width: 38rem;
+}
+
+.access-copy h1 {
+  margin: 0;
+  font-size: clamp(3rem, 5.6vw, 4.8rem);
+  line-height: 0.94;
+  color: #ffffff;
+}
+
+.access-copy-ru {
+  margin: 0;
+  color: #c8b2a1;
+  font-size: 0.94rem;
+  line-height: 1.7;
+}
+
+.access-panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 28px;
+}
+
+.access-card {
+  width: min(460px, 100%);
+  display: grid;
+  gap: 20px;
+  padding: 28px;
+  border-radius: 28px;
+  border: 1px solid rgba(0, 0, 0, 0.07);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 18px 44px rgba(53, 28, 19, 0.1);
+}
+
+.access-card h2 {
+  margin: 0;
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 2.2rem;
+  line-height: 0.98;
+}
+
+.access-note {
+  margin: -8px 0 0;
+  color: #6b5560;
+  font-size: 0.92rem;
+  line-height: 1.7;
+}
+
+.access-field {
+  display: grid;
+  gap: 10px;
+}
+
+.access-field span {
+  color: #6b5560;
+  font-size: 0.82rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.access-input {
+  min-height: 56px;
+  font-size: 1rem;
+}
+
+.access-error {
+  margin-top: -4px;
+}
+
+.access-meta {
+  display: grid;
+  gap: 14px;
+  padding-top: 4px;
+}
+
+.access-meta > div {
+  padding: 16px 18px;
+  border-radius: 20px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  background: rgba(250, 247, 243, 0.9);
+}
+
+.access-meta strong {
+  display: block;
+  margin-bottom: 5px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 0.9rem;
+}
+
+.access-meta span {
+  color: #6b5560;
+  font-size: 0.85rem;
+  line-height: 1.7;
+}
+
 .landing-panel-inner {
   width: min(460px, 100%);
   display: grid;
@@ -918,6 +1087,13 @@
   padding-bottom: 14px;
 }
 
+.exam-nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
 .exam-brand {
   display: grid;
   gap: 2px;
@@ -1014,6 +1190,43 @@
   font-family: 'Manrope', sans-serif;
   font-size: 0.82rem;
   color: #4a3540;
+}
+
+.sync-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(45, 107, 74, 0.14);
+  background: rgba(45, 107, 74, 0.06);
+  color: #2d6b4a;
+  font-size: 0.8rem;
+}
+
+.sync-pill .status-dot {
+  background: currentColor;
+}
+
+.sync-pill strong {
+  font-family: 'Manrope', sans-serif;
+  font-size: 0.8rem;
+}
+
+.sync-pill.saving {
+  color: #b8892e;
+  border-color: rgba(197, 154, 74, 0.2);
+  background: rgba(197, 154, 74, 0.08);
+}
+
+.sync-pill.error {
+  color: #c0394a;
+  border-color: rgba(192, 57, 74, 0.18);
+  background: rgba(192, 57, 74, 0.08);
+}
+
+.nav-ghost {
+  min-height: 46px;
 }
 
 .section-shell,
@@ -2299,12 +2512,14 @@
 }
 
 @media (max-width: 1080px) {
+  .access-shell,
   .landing-shell,
   .overview-grid,
   .analysis-grid {
     grid-template-columns: 1fr;
   }
 
+  .access-panel,
   .landing-panel {
     padding-top: 0;
   }
@@ -2323,6 +2538,8 @@
 }
 
 @media (max-width: 820px) {
+  .access-hero,
+  .access-panel,
   .landing-hero,
   .landing-panel,
   .overview-body,
@@ -2360,7 +2577,8 @@
   .reviewer-topbar,
   .recording-row,
   .section-footer,
-  .modal-actions {
+  .modal-actions,
+  .exam-nav-actions {
     flex-direction: column;
     align-items: stretch;
   }
@@ -2400,7 +2618,9 @@
   }
 
   .timer-box,
-  .submit-button {
+  .submit-button,
+  .sync-pill,
+  .nav-ghost {
     width: 100%;
     justify-content: center;
   }
@@ -2425,16 +2645,19 @@
 }
 
 @media (max-width: 560px) {
+  .access-hero,
   .landing-hero {
     padding-top: 24px;
     padding-bottom: 28px;
   }
 
+  .access-copy,
   .landing-copy {
     min-height: auto;
     padding: 28px 0;
   }
 
+  .access-copy h1,
   .landing-copy h1,
   .overview-header h2,
   .results-hero-copy h2,
@@ -2443,6 +2666,7 @@
     font-size: clamp(2.35rem, 11vw, 3.1rem);
   }
 
+  .access-panel,
   .landing-panel,
   .overview-body,
   .page-frame,
@@ -2452,6 +2676,7 @@
     padding-bottom: 48px;
   }
 
+  .access-panel,
   .landing-panel,
   .overview-body {
     padding-left: 0;
@@ -2505,6 +2730,11 @@
   .results-score-ring {
     width: 110px;
     height: 110px;
+  }
+
+  .access-card {
+    padding: 22px 18px;
+    border-radius: 24px;
   }
 }
 

@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   AlertCircle,
   AlertTriangle,
@@ -12,7 +12,6 @@ import {
   ChevronUp,
   Circle,
   Clock,
-  Download,
   Headphones,
   Lightbulb,
   Mic,
@@ -29,9 +28,21 @@ import {
 } from 'lucide-react'
 import './App.css'
 import { examData } from './examData'
+import {
+  deleteSpeakingRecording,
+  fetchLatestAttempt,
+  getCurrentSession,
+  isReviewModeRequest,
+  isTrustedSession,
+  openExamSession,
+  saveAttemptRemote,
+  signOutExamSession,
+  uploadSpeakingRecording,
+} from './lib/examBackend'
 
 const STORAGE_KEY = 'galina-exam-template-v1'
 const EXAM_DURATION_SECONDS = 3 * 60 * 60
+const REMOTE_SAVE_DEBOUNCE_MS = 900
 const SECTION_ORDER = ['reading', 'listening', 'writing', 'speaking']
 const SECTION_THEMES = {
   reading: {
@@ -62,6 +73,10 @@ const SECTION_THEMES = {
     border: 'rgba(107, 45, 122, 0.18)',
     glow: 'rgba(107, 45, 122, 0.24)',
   },
+}
+
+function createInitialPlayCounts() {
+  return Object.fromEntries(examData.listening.sections.map((section) => [section.id, 0]))
 }
 
 function createInitialAudioState() {
@@ -120,6 +135,8 @@ function createInitialState() {
     lockedAt: '',
     lockedReason: '',
     lastUpdatedAt: '',
+    currentSection: 'overview',
+    playCounts: createInitialPlayCounts(),
     answers,
     writing,
     speaking,
@@ -276,6 +293,10 @@ function mergeImportedState(rawState) {
       ...base.writing,
       ...(rawState.writing || {}),
     },
+    playCounts: {
+      ...base.playCounts,
+      ...(rawState.playCounts || {}),
+    },
     speaking: {
       ...base.speaking,
       ...(rawState.speaking || {}),
@@ -381,15 +402,6 @@ function formatCountdown(seconds) {
   return [hours, minutes, remainder].map((item) => String(item).padStart(2, '0')).join(':')
 }
 
-function createDownload(filename, content, type) {
-  const url = URL.createObjectURL(new Blob([content], { type }))
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  link.click()
-  URL.revokeObjectURL(url)
-}
-
 function getRecordingSource(recording) {
   if (!recording) {
     return ''
@@ -398,13 +410,52 @@ function getRecordingSource(recording) {
   return recording.playbackUrl || recording.dataUrl || ''
 }
 
+function getRecordingFileExtension(mimeType) {
+  if (mimeType.includes('mp4')) {
+    return 'm4a'
+  }
+
+  if (mimeType.includes('ogg')) {
+    return 'ogg'
+  }
+
+  if (mimeType.includes('mpeg')) {
+    return 'mp3'
+  }
+
+  return 'webm'
+}
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onloadend = () => resolve(reader.result)
+    reader.onerror = reject
+    reader.readAsDataURL(blob)
+  })
+}
+
+function getComparableState(state) {
+  return JSON.stringify({
+    ...getStorageSafeState(state),
+    lastUpdatedAt: '',
+  })
+}
+
 function App() {
-  const [examState, setExamState] = useState(() => loadSavedState())
-  const [currentSection, setCurrentSection] = useState('overview')
+  const initialStateRef = useRef(null)
+  if (!initialStateRef.current) {
+    initialStateRef.current = loadSavedState()
+  }
+
+  const [examState, setExamState] = useState(() => initialStateRef.current)
+  const [currentSection, setCurrentSection] = useState(() => initialStateRef.current.currentSection || 'overview')
+  const [reviewRequested] = useState(() =>
+    typeof window !== 'undefined' ? isReviewModeRequest() : false,
+  )
   const [introView, setIntroView] = useState('landing')
   const [overviewChecks, setOverviewChecks] = useState({})
   const [now, setNow] = useState(() => Date.now())
-  const [playCounts, setPlayCounts] = useState({})
   const [audioState, setAudioState] = useState(() => createInitialAudioState())
   const [activeListeningId, setActiveListeningId] = useState('')
   const [listeningError, setListeningError] = useState('')
@@ -412,18 +463,25 @@ function App() {
   const [activeRecordingId, setActiveRecordingId] = useState('')
   const [recordingElapsedSeconds, setRecordingElapsedSeconds] = useState(0)
   const [showSubmitPrompt, setShowSubmitPrompt] = useState(false)
+  const [authStatus, setAuthStatus] = useState('checking')
+  const [accessCode, setAccessCode] = useState('')
+  const [authError, setAuthError] = useState('')
+  const [syncStatus, setSyncStatus] = useState('idle')
+  const [syncError, setSyncError] = useState('')
+  const [syncTimestamp, setSyncTimestamp] = useState('')
+  const [remoteAttemptId, setRemoteAttemptId] = useState('')
+  const [hasHydratedRemote, setHasHydratedRemote] = useState(false)
   const [teacherToolsOpen, setTeacherToolsOpen] = useState(() =>
-    typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('review') === '1',
+    typeof window !== 'undefined' && isReviewModeRequest(),
   )
-  const importInputId = useId()
 
   const audioRef = useRef(null)
   const mediaRecorderRef = useRef(null)
   const mediaChunksRef = useRef([])
   const mediaStreamRef = useRef(null)
   const recordingStartedAtRef = useRef(0)
-  const reviewRequested =
-    typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('review') === '1'
+  const remoteSyncTimeoutRef = useRef(null)
+  const lastRemoteComparableRef = useRef('')
   const hasStarted = isFilled(examState.startedAt)
   const startedAtMs = hasStarted ? Date.parse(examState.startedAt) : 0
   const deadlineMs = startedAtMs + EXAM_DURATION_SECONDS * 1000
@@ -482,18 +540,142 @@ function App() {
     ? `${examData.meta.studentName}'s full review is complete. The strongest objective area is ${topStrength.toLowerCase()}, and the clearest next revision focus is ${topRevisionPriority.toLowerCase()}.`
     : `${examData.meta.studentName}'s reading and listening have been scored. Writing and speaking remain pending until Ramazan reviews them.`
   const showPreExamFlow = currentSection === 'overview' && !hasActiveAttempt && !reviewRequested
-  const reviewMode = reviewRequested && teacherToolsOpen
+  const reviewMode = reviewRequested
   const submittedEarly = isExamLocked && examState.lockedReason === 'submitted' && !timerExpired
+  const isAuthorized = authStatus === 'ready'
+  const syncStatusText =
+    syncStatus === 'saving'
+      ? 'Saving securely...'
+      : syncStatus === 'error'
+        ? syncError || 'Secure sync failed'
+        : syncTimestamp
+          ? `Saved ${formatTimestamp(syncTimestamp)}`
+          : isAuthorized
+            ? 'Secure sync ready'
+            : 'Private access required'
 
   useEffect(() => {
     window.localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({
         ...getStorageSafeState(examState),
+        currentSection,
         lastUpdatedAt: new Date().toISOString(),
       }),
     )
-  }, [examState])
+  }, [currentSection, examState])
+
+  async function hydrateLatestAttempt({ keepCurrentSection = false } = {}) {
+    setSyncError('')
+    const attempt = await fetchLatestAttempt()
+
+    if (!attempt) {
+      setRemoteAttemptId('')
+      setSyncTimestamp('')
+      setHasHydratedRemote(true)
+      setSyncStatus('saved')
+      lastRemoteComparableRef.current = ''
+
+      if (!keepCurrentSection) {
+        if (reviewRequested) {
+          setCurrentSection('results')
+        } else if (hasStarted && !isExamLocked) {
+          setCurrentSection(examState.currentSection || 'reading')
+        } else {
+          setCurrentSection('overview')
+        }
+      }
+
+      return null
+    }
+
+    const nextState = mergeImportedState(attempt.payload || {})
+    const nextSection =
+      reviewRequested
+        ? 'results'
+        : nextState.startedAt && !nextState.lockedAt
+          ? nextState.currentSection && nextState.currentSection !== 'results'
+            ? nextState.currentSection
+            : 'reading'
+          : 'overview'
+
+    setExamState(nextState)
+    setRemoteAttemptId(attempt.id)
+    setSyncTimestamp(attempt.updatedAt || nextState.lastUpdatedAt || '')
+    setHasHydratedRemote(true)
+    setSyncStatus('saved')
+    lastRemoteComparableRef.current = getComparableState(nextState)
+
+    if (!keepCurrentSection) {
+      setCurrentSection(nextSection)
+    }
+
+    return attempt
+  }
+
+  useEffect(() => {
+    const initialLocalState = initialStateRef.current
+
+    async function restoreTrustedSession() {
+      try {
+        const session = await getCurrentSession()
+
+        if (!session || !isTrustedSession(session)) {
+          setAuthStatus('locked')
+          setHasHydratedRemote(false)
+          return
+        }
+
+        setAuthStatus('checking')
+        setSyncError('')
+        const attempt = await fetchLatestAttempt()
+
+        if (!attempt) {
+          setRemoteAttemptId('')
+          setSyncTimestamp('')
+          setHasHydratedRemote(true)
+          setSyncStatus('saved')
+          lastRemoteComparableRef.current = ''
+
+          if (reviewRequested) {
+            setCurrentSection('results')
+          } else if (initialLocalState.startedAt && !initialLocalState.lockedAt) {
+            setCurrentSection(initialLocalState.currentSection || 'reading')
+          } else {
+            setCurrentSection('overview')
+          }
+
+          setAuthStatus('ready')
+          return
+        }
+
+        const nextState = mergeImportedState(attempt.payload || {})
+        const nextSection =
+          reviewRequested
+            ? 'results'
+            : nextState.startedAt && !nextState.lockedAt
+              ? nextState.currentSection && nextState.currentSection !== 'results'
+                ? nextState.currentSection
+                : 'reading'
+              : 'overview'
+
+        setExamState(nextState)
+        setRemoteAttemptId(attempt.id)
+        setSyncTimestamp(attempt.updatedAt || nextState.lastUpdatedAt || '')
+        setHasHydratedRemote(true)
+        setSyncStatus('saved')
+        lastRemoteComparableRef.current = getComparableState(nextState)
+        setCurrentSection(nextSection)
+        setAuthStatus('ready')
+      } catch (error) {
+        setAuthError(error.message || 'The private exam could not be opened.')
+        setAuthStatus('locked')
+        setHasHydratedRemote(false)
+      }
+    }
+
+    restoreTrustedSession()
+  }, [reviewRequested])
 
   useEffect(() => {
     if (!hasStarted || isExamLocked) {
@@ -509,9 +691,9 @@ function App() {
 
   useEffect(() => {
     if (hasActiveAttempt && currentSection === 'overview') {
-      setCurrentSection('reading')
+      setCurrentSection(examState.currentSection && examState.currentSection !== 'results' ? examState.currentSection : 'reading')
     }
-  }, [currentSection, hasActiveAttempt])
+  }, [currentSection, examState.currentSection, hasActiveAttempt])
 
   useEffect(() => {
     if (reviewRequested && currentSection === 'overview' && !hasActiveAttempt) {
@@ -594,6 +776,7 @@ function App() {
 
     setExamState((current) => ({
       ...current,
+      currentSection: 'results',
       lockedAt: current.lockedAt || new Date().toISOString(),
       lockedReason: current.lockedReason || 'timeout',
     }))
@@ -637,6 +820,7 @@ function App() {
 
     setExamState((current) => ({
       ...current,
+      currentSection: 'results',
       lockedAt: current.lockedAt || new Date().toISOString(),
       lockedReason: current.lockedReason || reason,
     }))
@@ -712,6 +896,10 @@ function App() {
       stopListeningPlayback()
     }
 
+    setExamState((current) => ({
+      ...current,
+      currentSection: sectionId,
+    }))
     setCurrentSection(sectionId)
   }
 
@@ -724,11 +912,11 @@ function App() {
     setNow(Date.now())
     setExamState({
       ...createInitialState(),
+      currentSection: 'reading',
       startedAt,
       lockedAt: '',
       lockedReason: '',
     })
-    setPlayCounts({})
     setAudioState(createInitialAudioState())
     setListeningError('')
     setRecordingError('')
@@ -745,7 +933,7 @@ function App() {
       return
     }
 
-    if ((playCounts[section.id] || 0) >= section.maxPlays) {
+    if ((examState.playCounts[section.id] || 0) >= section.maxPlays) {
       setListeningError('Maximum playback count reached for this audio.')
       return
     }
@@ -753,9 +941,12 @@ function App() {
     setListeningError('')
     stopListeningPlayback()
 
-    setPlayCounts((current) => ({
+    setExamState((current) => ({
       ...current,
-      [section.id]: (current[section.id] || 0) + 1,
+      playCounts: {
+        ...current.playCounts,
+        [section.id]: (current.playCounts[section.id] || 0) + 1,
+      },
     }))
     setActiveListeningId(section.id)
 
@@ -872,29 +1063,56 @@ function App() {
 
       recorder.onstop = async () => {
         const blob = new Blob(mediaChunksRef.current, { type: recorder.mimeType || 'audio/webm' })
-        const dataUrl = await new Promise((resolve, reject) => {
-          const reader = new FileReader()
-          reader.onloadend = () => resolve(reader.result)
-          reader.onerror = reject
-          reader.readAsDataURL(blob)
-        })
-
         const durationSeconds = Math.max(1, Math.round((Date.now() - recordingStartedAtRef.current) / 1000))
 
-        setExamState((current) => ({
-          ...current,
-          speaking: {
-            ...current.speaking,
-            [partId]: {
-              recording: {
-                dataUrl,
-                mimeType: blob.type || 'audio/webm',
-                name: `${partId}.webm`,
-                durationLabel: `${durationSeconds} sec`,
+        try {
+          const uploadedRecording = await uploadSpeakingRecording({
+            attemptId: remoteAttemptId,
+            partId,
+            blob,
+          })
+
+          setExamState((current) => ({
+            ...current,
+            speaking: {
+              ...current.speaking,
+              [partId]: {
+                recording: {
+                  dataUrl: null,
+                  mimeType: blob.type || 'audio/webm',
+                  name: `${partId}.${getRecordingFileExtension(blob.type || 'audio/webm')}`,
+                  durationLabel: `${durationSeconds} sec`,
+                  playbackUrl: uploadedRecording.playbackUrl,
+                  storagePath: uploadedRecording.storagePath,
+                },
               },
             },
-          },
-        }))
+          }))
+          setRecordingError('')
+        } catch (error) {
+          const dataUrl = await blobToDataUrl(blob)
+
+          setExamState((current) => ({
+            ...current,
+            speaking: {
+              ...current.speaking,
+              [partId]: {
+                recording: {
+                  dataUrl,
+                  mimeType: blob.type || 'audio/webm',
+                  name: `${partId}.${getRecordingFileExtension(blob.type || 'audio/webm')}`,
+                  durationLabel: `${durationSeconds} sec`,
+                  playbackUrl: null,
+                  storagePath: null,
+                },
+              },
+            },
+          }))
+          setRecordingError(
+            error.message ||
+              'The recording was captured locally, but the secure upload failed. Keep this tab open and record again before submitting.',
+          )
+        }
 
         if (mediaStreamRef.current) {
           mediaStreamRef.current.getTracks().forEach((track) => track.stop())
@@ -912,9 +1130,20 @@ function App() {
     }
   }
 
-  function deleteRecording(partId) {
+  async function deleteRecording(partId) {
     if (isExamLocked) {
       return
+    }
+
+    const currentRecording = examState.speaking[partId]?.recording
+
+    if (currentRecording?.storagePath) {
+      try {
+        await deleteSpeakingRecording(currentRecording.storagePath)
+      } catch (error) {
+        setRecordingError(error.message || 'The saved recording could not be removed.')
+        return
+      }
     }
 
     setExamState((current) => ({
@@ -926,62 +1155,50 @@ function App() {
         },
       },
     }))
+    setRecordingError('')
   }
 
-  function exportSubmission() {
-    const payload = {
-      version: 1,
-      exportedAt: new Date().toISOString(),
-      meta: examData.meta,
-      state: examState,
-      timing: {
-        durationSeconds: EXAM_DURATION_SECONDS,
-        startedAt: examState.startedAt,
-        lockedAt: examState.lockedAt,
-        lockedReason: examState.lockedReason,
-        remainingSeconds,
-      },
-      results: {
-        readingScore,
-        listeningScore,
-        objectiveTotalScore,
-        objectiveMaxScore,
-        writingReviewed,
-        speakingReviewed,
-        finalReviewReady,
-        writingTeacherScore,
-        speakingTeacherScore,
-        totalScore,
-        maxScore,
-        totalPercent,
-        readinessLabel,
-      },
-    }
+  async function handleAccessSubmit(event) {
+    event.preventDefault()
 
-    createDownload(
-      `galina-exam-submission-${new Date().toISOString().slice(0, 10)}.json`,
-      JSON.stringify(payload, null, 2),
-      'application/json',
-    )
-  }
-
-  async function importSubmission(event) {
-    const file = event.target.files && event.target.files[0]
-    if (!file) {
+    const nextCode = accessCode.trim()
+    if (!nextCode) {
+      setAuthError('Enter the private access code to open the exam.')
       return
     }
 
+    setAuthStatus('authenticating')
+    setAuthError('')
+
     try {
-      const raw = await file.text()
-      const parsed = JSON.parse(raw)
-      const nextState = mergeImportedState(parsed.state || parsed)
-      setExamState(nextState)
-      setCurrentSection('results')
-      setTeacherToolsOpen(true)
+      await openExamSession(nextCode, { reviewMode: reviewRequested })
+      await hydrateLatestAttempt()
+      setAuthStatus('ready')
+    } catch (error) {
+      setAuthError(error.message || 'The private exam could not be opened.')
+      setAuthStatus('locked')
+    }
+  }
+
+  async function refreshRemoteAttempt() {
+    setSyncStatus('saving')
+
+    try {
+      await hydrateLatestAttempt({ keepCurrentSection: reviewRequested })
+    } catch (error) {
+      setSyncStatus('error')
+      setSyncError(error.message || 'The latest attempt could not be loaded.')
+    }
+  }
+
+  async function handleSignOut() {
+    try {
+      await signOutExamSession()
     } catch {
-      setRecordingError('The submission file could not be imported.')
+      // Ignore logout cleanup failures and force a clean local reset.
     } finally {
-      event.target.value = ''
+      window.localStorage.removeItem(STORAGE_KEY)
+      window.location.reload()
     }
   }
 
@@ -1002,6 +1219,65 @@ function App() {
     if (previous) {
       goToSection(previous)
     }
+  }
+
+  useEffect(() => {
+    if (!isAuthorized || !hasHydratedRemote) {
+      return undefined
+    }
+
+    const comparableState = getComparableState({
+      ...examState,
+      currentSection,
+    })
+
+    if (comparableState === lastRemoteComparableRef.current) {
+      return undefined
+    }
+
+    setSyncStatus('saving')
+    setSyncError('')
+
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        const payload = {
+          ...getStorageSafeState({
+            ...examState,
+            currentSection,
+          }),
+          currentSection,
+          lastUpdatedAt: new Date().toISOString(),
+        }
+
+        const savedAttempt = await saveAttemptRemote(remoteAttemptId, payload)
+        setRemoteAttemptId(savedAttempt.id)
+        setSyncTimestamp(savedAttempt.updated_at || payload.lastUpdatedAt)
+        setSyncStatus('saved')
+        lastRemoteComparableRef.current = comparableState
+      } catch (error) {
+        setSyncStatus('error')
+        setSyncError(error.message || 'The exam could not be saved securely.')
+      }
+    }, REMOTE_SAVE_DEBOUNCE_MS)
+
+    remoteSyncTimeoutRef.current = timeoutId
+
+    return () => {
+      window.clearTimeout(timeoutId)
+    }
+  }, [currentSection, examState, hasHydratedRemote, isAuthorized, remoteAttemptId])
+
+  if (!isAuthorized) {
+    return (
+      <AccessGatePage
+        accessCode={accessCode}
+        authError={authError}
+        authStatus={authStatus}
+        isReviewMode={reviewRequested}
+        onAccessCodeChange={setAccessCode}
+        onSignIn={handleAccessSubmit}
+      />
+    )
   }
 
   if (showPreExamFlow) {
@@ -1037,12 +1313,16 @@ function App() {
       {currentSection !== 'results' && (
         <ExamNav
           currentSection={currentSection}
+          isReviewMode={reviewRequested}
+          onSignOut={handleSignOut}
           onSectionChange={goToSection}
           remainingSeconds={remainingSeconds}
           progressPercent={skillProgressPercent}
           completedSkills={completedSkills}
           isExamLocked={isExamLocked}
           onSubmit={() => setShowSubmitPrompt(true)}
+          syncStatus={syncStatus}
+          syncStatusText={syncStatusText}
         />
       )}
 
@@ -1067,7 +1347,7 @@ function App() {
             onBack={previousSection}
             onContinue={nextSection}
             onPlay={playListeningSection}
-            playCounts={playCounts}
+            playCounts={examState.playCounts}
           />
         )}
 
@@ -1101,11 +1381,10 @@ function App() {
             completion={completion}
             examState={examState}
             finalReviewReady={finalReviewReady}
-            importInputId={importInputId}
             objectivePercent={objectivePercent}
-            onExport={exportSubmission}
-            onImport={importSubmission}
             onPrint={() => window.print()}
+            onRefresh={refreshRemoteAttempt}
+            onSignOut={handleSignOut}
             onTeacherComment={updateTeacherComment}
             onTeacherScore={updateTeacherScore}
             readingScore={readingScore}
@@ -1124,6 +1403,8 @@ function App() {
             writingTeacherScore={writingTeacherScore}
             listeningScore={listeningScore}
             onToggleTeacherTools={() => setTeacherToolsOpen((current) => !current)}
+            syncStatus={syncStatus}
+            syncStatusText={syncStatusText}
             teacherToolsOpen={teacherToolsOpen}
           />
         )}
@@ -1425,14 +1706,89 @@ function OverviewPage({ allChecklistReady, checks, hasLockedAttempt, onBack, onT
   )
 }
 
+function AccessGatePage({ accessCode, authError, authStatus, isReviewMode, onAccessCodeChange, onSignIn }) {
+  const isBusy = authStatus === 'checking' || authStatus === 'authenticating'
+
+  return (
+    <section className="access-shell">
+      <div className="access-hero">
+        <div className="landing-noise" />
+
+        <div className="access-badge">
+          <span className="landing-badge-icon">
+            <ShieldCheck size={16} />
+          </span>
+          <div>
+            <strong>Private Exam Access</strong>
+            <span>{isReviewMode ? 'Reviewer entry' : 'Student entry'}</span>
+          </div>
+        </div>
+
+        <div className="access-copy">
+          <p className="landing-overline">Secure entry</p>
+          <h1>{isReviewMode ? 'Reviewer access' : "Galina's exam space"}</h1>
+          <p className="landing-subtitle">
+            Enter the private code from Ramazan to open the live exam session. The same secure session is used for
+            autosave, speaking recordings, and reviewer scoring.
+          </p>
+          <p className="access-copy-ru">Введите код доступа, чтобы открыть экзамен и сохранить ответы автоматически.</p>
+        </div>
+      </div>
+
+      <div className="access-panel">
+        <form className="access-card" onSubmit={onSignIn}>
+          <p className="panel-kicker">{isReviewMode ? 'Review Mode' : 'Exam Mode'}</p>
+          <h2>{isBusy ? 'Opening secure session...' : 'Enter access code'}</h2>
+          <p className="access-note">Nothing is shown before the private session opens.</p>
+
+          <label className="access-field">
+            <span>Access code</span>
+            <input
+              autoComplete="current-password"
+              className="answer-input access-input"
+              disabled={isBusy}
+              placeholder="Enter the private code"
+              type="password"
+              value={accessCode}
+              onChange={(event) => onAccessCodeChange(event.target.value)}
+            />
+          </label>
+
+          {authError && <p className="error-banner access-error">{authError}</p>}
+
+          <button className="primary-cta" disabled={isBusy} type="submit">
+            <ShieldCheck size={16} />
+            <span>{isBusy ? 'Opening secure session' : 'Open private exam'}</span>
+          </button>
+
+          <div className="access-meta">
+            <div>
+              <strong>Auto-save</strong>
+              <span>Answers and speaking recordings are stored remotely.</span>
+            </div>
+            <div>
+              <strong>Review</strong>
+              <span>Ramazan reviews writing and speaking directly in the same session.</span>
+            </div>
+          </div>
+        </form>
+      </div>
+    </section>
+  )
+}
+
 function ExamNav({
   currentSection,
+  isReviewMode,
+  onSignOut,
   onSectionChange,
   remainingSeconds,
   progressPercent,
   completedSkills,
   isExamLocked,
   onSubmit,
+  syncStatus,
+  syncStatusText,
 }) {
   const isUrgent = remainingSeconds <= 600
   const isCritical = remainingSeconds <= 180
@@ -1472,10 +1828,26 @@ function ExamNav({
           <strong>{isExamLocked ? 'Locked' : formatCountdown(remainingSeconds)}</strong>
         </div>
 
-        <button className="submit-button" type="button" onClick={onSubmit}>
-          <Send size={14} />
-          <span>Submit</span>
-        </button>
+        <div className="exam-nav-actions">
+          <div className={`sync-pill ${syncStatus === 'error' ? 'error' : syncStatus === 'saving' ? 'saving' : ''}`}>
+            <span className="status-dot" />
+            <strong>{syncStatusText}</strong>
+          </div>
+
+          {isReviewMode && (
+            <button className="ghost-action nav-ghost" type="button" onClick={onSignOut}>
+              <X size={14} />
+              <span>Close review</span>
+            </button>
+          )}
+
+          {!isReviewMode && (
+            <button className="submit-button" type="button" onClick={onSubmit}>
+              <Send size={14} />
+              <span>Submit</span>
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="exam-progress-track" aria-hidden="true">
@@ -1903,11 +2275,10 @@ function ResultsPage({
   completion,
   examState,
   finalReviewReady,
-  importInputId,
   objectivePercent,
-  onExport,
-  onImport,
   onPrint,
+  onRefresh,
+  onSignOut,
   onTeacherComment,
   onTeacherScore,
   readingScore,
@@ -1926,6 +2297,8 @@ function ResultsPage({
   writingTeacherScore,
   listeningScore,
   onToggleTeacherTools,
+  syncStatus,
+  syncStatusText,
   teacherToolsOpen,
 }) {
   const displayPercent = finalReviewReady ? totalPercent : objectivePercent
@@ -2194,13 +2567,6 @@ function ResultsPage({
             <Printer size={16} />
             <span>Print Certificate</span>
           </button>
-
-          {reviewMode && (
-            <button className="ghost-action" type="button" onClick={onExport}>
-              <Download size={16} />
-              <span>Download Session File</span>
-            </button>
-          )}
         </div>
       </section>
 
@@ -2209,22 +2575,28 @@ function ResultsPage({
           <div className="reviewer-topbar">
             <div>
               <h3>Reviewer Tools</h3>
-              <p>Visible only in review mode.</p>
+              <p>{syncStatusText}</p>
             </div>
 
             <div className="reviewer-actions">
-              <label className="ghost-action file-trigger" htmlFor={importInputId}>
-                <Download size={16} />
-                <span>Import Saved Session</span>
-              </label>
-              <input id={importInputId} className="hidden-input" type="file" accept="application/json" onChange={onImport} />
+              <button className="ghost-action" type="button" onClick={onRefresh}>
+                <Clock size={16} />
+                <span>Refresh latest session</span>
+              </button>
 
               <button className="ghost-action" type="button" onClick={onToggleTeacherTools}>
                 {teacherToolsOpen ? <X size={16} /> : <ChevronDown size={16} />}
                 <span>{teacherToolsOpen ? 'Hide Reviewer Panel' : 'Show Reviewer Panel'}</span>
               </button>
+
+              <button className="ghost-action" type="button" onClick={onSignOut}>
+                <ShieldCheck size={16} />
+                <span>Close reviewer session</span>
+              </button>
             </div>
           </div>
+
+          {syncStatus === 'error' && <p className="error-banner">Reviewer sync needs attention. Try refreshing the latest session.</p>}
 
           {teacherToolsOpen && (
             <>
