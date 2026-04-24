@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   AlertCircle,
   AlertTriangle,
@@ -565,6 +565,39 @@ function App() {
     )
   }, [currentSection, examState])
 
+  const persistAttemptImmediately = useCallback(async (nextState, nextSection = currentSection) => {
+    if (!isAuthorized || !hasHydratedRemote) {
+      return
+    }
+
+    if (remoteSyncTimeoutRef.current) {
+      window.clearTimeout(remoteSyncTimeoutRef.current)
+      remoteSyncTimeoutRef.current = null
+    }
+
+    const payload = {
+      ...getStorageSafeState({
+        ...nextState,
+        currentSection: nextSection,
+      }),
+      currentSection: nextSection,
+      lastUpdatedAt: new Date().toISOString(),
+    }
+
+    try {
+      setSyncStatus('saving')
+      setSyncError('')
+      const savedAttempt = await saveAttemptRemote(remoteAttemptId, payload)
+      setRemoteAttemptId(savedAttempt.id)
+      setSyncTimestamp(savedAttempt.updated_at || payload.lastUpdatedAt)
+      setSyncStatus('saved')
+      lastRemoteComparableRef.current = getComparableState(payload)
+    } catch (error) {
+      setSyncStatus('error')
+      setSyncError(error.message || 'The exam could not be saved securely.')
+    }
+  }, [currentSection, hasHydratedRemote, isAuthorized, remoteAttemptId])
+
   async function hydrateLatestAttempt({ keepCurrentSection = false } = {}) {
     setSyncError('')
     const attempt = await fetchLatestAttempt()
@@ -774,15 +807,18 @@ function App() {
     setActiveListeningId('')
     stopRecording()
 
-    setExamState((current) => ({
-      ...current,
+    const nextState = {
+      ...examState,
       currentSection: 'results',
-      lockedAt: current.lockedAt || new Date().toISOString(),
-      lockedReason: current.lockedReason || 'timeout',
-    }))
+      lockedAt: examState.lockedAt || new Date().toISOString(),
+      lockedReason: examState.lockedReason || 'timeout',
+    }
+
+    setExamState(nextState)
     setCurrentSection('results')
     setShowSubmitPrompt(false)
-  }, [timerExpired, examState.lockedAt, activeListeningId])
+    void persistAttemptImmediately(nextState, 'results')
+  }, [timerExpired, examState, activeListeningId, persistAttemptImmediately])
 
   function stopListeningPlayback() {
     if (audioRef.current) {
@@ -818,14 +854,17 @@ function App() {
     stopListeningPlayback()
     stopRecording()
 
-    setExamState((current) => ({
-      ...current,
+    const nextState = {
+      ...examState,
       currentSection: 'results',
-      lockedAt: current.lockedAt || new Date().toISOString(),
-      lockedReason: current.lockedReason || reason,
-    }))
+      lockedAt: examState.lockedAt || new Date().toISOString(),
+      lockedReason: examState.lockedReason || reason,
+    }
+
+    setExamState(nextState)
     setCurrentSection('results')
     setShowSubmitPrompt(false)
+    void persistAttemptImmediately(nextState, 'results')
   }
 
   function updateAnswer(questionId, value) {
