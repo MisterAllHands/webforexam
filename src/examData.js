@@ -461,7 +461,7 @@ export const examData = {
     instruction:
       'Record one answer for each part. Speak naturally and clearly. Do not try to memorise a full script.',
     browserNote:
-      'Chrome and Safari usually handle microphone recording best. Download your submission before you close the browser tab.',
+      'Chrome and Safari usually handle microphone recording best. Wait until the save status confirms the recording has been stored for Ramazan.',
     coachNote:
       'Speaking should sound alive, not memorised. The goal is calm control, not perfection. Short pauses are acceptable; frozen silence is what we want to avoid.',
     strategy:

@@ -2639,6 +2639,9 @@ function ResultsPage({
 
           {teacherToolsOpen && (
             <>
+              <ObjectiveReviewPanel answers={examState.answers} />
+              <WritingEvidencePanel writing={examState.writing} />
+
               <div className="review-grid">
                 <section className="review-card">
                   <h4>Writing review</h4>
@@ -2789,6 +2792,97 @@ function SubmitModal({ completion, onClose, onSubmit, remainingSeconds, speaking
         </div>
       </div>
     </div>
+  )
+}
+
+function ObjectiveReviewPanel({ answers }) {
+  const reviewGroups = [
+    {
+      id: 'reading',
+      label: 'Reading answer evidence',
+      questions: examData.reading.passages.flatMap((passage) =>
+        passage.questions.map((question) => ({
+          ...question,
+          sourceTitle: passage.title,
+        })),
+      ),
+    },
+    {
+      id: 'listening',
+      label: 'Listening answer evidence',
+      questions: examData.listening.sections.flatMap((section) =>
+        section.questions.map((question) => ({
+          ...question,
+          sourceTitle: section.title,
+        })),
+      ),
+    },
+  ]
+
+  return (
+    <section className="review-card answer-evidence-card">
+      <h4>Reading and listening answers</h4>
+      <p>Every auto-scored answer is shown here so Ramazan can audit correct and wrong responses.</p>
+
+      <div className="answer-evidence-groups">
+        {reviewGroups.map((group) => (
+          <div key={group.id} className="answer-evidence-group">
+            <h5>{group.label}</h5>
+            {group.questions.map((question, index) => {
+              const answer = answers[question.id] || ''
+              const earned = scoreQuestion(question, answer)
+              const correct = earned === question.points
+              const expected = Array.isArray(question.answer) ? question.answer.join(' / ') : question.answer
+
+              return (
+                <article key={question.id} className={`answer-evidence-row ${correct ? 'correct' : 'wrong'}`}>
+                  <div className="answer-evidence-head">
+                    <span>{index + 1}</span>
+                    <div>
+                      <strong>{question.sourceTitle}</strong>
+                      <em>{correct ? 'Correct' : 'Wrong'} · {earned}/{question.points} pts</em>
+                    </div>
+                  </div>
+                  <p>{question.prompt}</p>
+                  <div className="answer-evidence-lines">
+                    <div>
+                      <span>Galina answered</span>
+                      <strong>{answer || 'No answer'}</strong>
+                    </div>
+                    <div>
+                      <span>Expected</span>
+                      <strong>{expected}</strong>
+                    </div>
+                  </div>
+                </article>
+              )
+            })}
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function WritingEvidencePanel({ writing }) {
+  return (
+    <section className="review-card answer-evidence-card">
+      <h4>Writing submissions</h4>
+      <p>These are Galina&apos;s exact typed answers. Score them against the writing rubric above.</p>
+
+      <div className="writing-evidence-list">
+        {examData.writing.tasks.map((task) => (
+          <article key={task.id} className="writing-evidence-row">
+            <div>
+              <strong>{task.title}</strong>
+              <span>{countWords(writing[task.id] || '')} words</span>
+            </div>
+            <p>{task.prompt}</p>
+            <blockquote>{writing[task.id] || 'No writing submitted.'}</blockquote>
+          </article>
+        ))}
+      </div>
+    </section>
   )
 }
 
